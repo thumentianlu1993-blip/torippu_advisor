@@ -1,3 +1,42 @@
+# Shared environment for backend / worker / beat. Optional keys default to
+# empty strings so collectors degrade gracefully until keys are added to .env.
+x-backend-env: &backend-env
+  - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://travel:travel@postgres:5432/travel}
+  - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+  - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
+  - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
+  - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  # LLM
+  - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
+  # Search + content extraction
+  - SERPER_API_KEY=${SERPER_API_KEY:-}
+  - TAVILY_API_KEY=${TAVILY_API_KEY:-}
+  - JINA_AI_ENABLED=${JINA_AI_ENABLED:-true}
+  - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY:-}
+  - FIRECRAWL_BASE_URL=${FIRECRAWL_BASE_URL:-}
+  # Platform APIs
+  - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY:-}
+  - APIFY_API_TOKEN=${APIFY_API_TOKEN:-}
+  - FOURSQUARE_API_KEY=${FOURSQUARE_API_KEY:-}
+  - YELP_API_KEY=${YELP_API_KEY:-}
+  - BING_SEARCH_API_KEY=${BING_SEARCH_API_KEY:-}
+  - TRIPADVISOR_API_KEY=${TRIPADVISOR_API_KEY:-}
+  - STAYAPI_API_KEY=${STAYAPI_API_KEY:-}
+  - DATAFORSEO_LOGIN=${DATAFORSEO_LOGIN:-}
+  - DATAFORSEO_PASSWORD=${DATAFORSEO_PASSWORD:-}
+  - BOOKING_AFFILIATE_ID=${BOOKING_AFFILIATE_ID:-}
+  - AGODA_API_KEY=${AGODA_API_KEY:-}
+  # Chinese platforms
+  - XIAOHONGSHU_API_KEY=${XIAOHONGSHU_API_KEY:-}
+  - XIAOHONGSHU_API_BASE_URL=${XIAOHONGSHU_API_BASE_URL:-}
+  - XIAOHONGSHU_API_ENDPOINT=${XIAOHONGSHU_API_ENDPOINT:-}
+  - TIKHUB_API_KEY=${TIKHUB_API_KEY:-}
+  - TIKHUB_XIAOHONGSHU_ENDPOINT=${TIKHUB_XIAOHONGSHU_ENDPOINT:-}
+  - DIANPING_API_KEY=${DIANPING_API_KEY:-}
+  - DIANPING_API_BASE_URL=${DIANPING_API_BASE_URL:-}
+  - CTRIP_API_KEY=${CTRIP_API_KEY:-}
+  - CTRIP_API_BASE_URL=${CTRIP_API_BASE_URL:-}
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -32,18 +71,7 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://travel:travel@postgres:5432/travel}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-      - XIAOHONGSHU_API_KEY=${XIAOHONGSHU_API_KEY}
-      - TRIPADVISOR_API_KEY=${TRIPADVISOR_API_KEY}
-      - BOOKING_AFFILIATE_ID=${BOOKING_AFFILIATE_ID}
-      - AGODA_API_KEY=${AGODA_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    environment: *backend-env
     volumes:
       - ./backend:/app
     depends_on:
@@ -57,18 +85,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: celery -A app.celery_app worker -l info -Q celery
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://travel:travel@postgres:5432/travel}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY}
-      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-      - XIAOHONGSHU_API_KEY=${XIAOHONGSHU_API_KEY}
-      - TRIPADVISOR_API_KEY=${TRIPADVISOR_API_KEY}
-      - BOOKING_AFFILIATE_ID=${BOOKING_AFFILIATE_ID}
-      - AGODA_API_KEY=${AGODA_API_KEY}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    environment: *backend-env
     volumes:
       - ./backend:/app
     depends_on:
@@ -82,12 +99,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     command: celery -A app.celery_app beat -l info
-    environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://travel:travel@postgres:5432/travel}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis:6379/0}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis:6379/0}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    environment: *backend-env
     volumes:
       - ./backend:/app
     depends_on:
