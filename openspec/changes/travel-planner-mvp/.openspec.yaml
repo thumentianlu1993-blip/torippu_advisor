@@ -1,0 +1,19 @@
+schema: spec-driven
+created: "2026-07-16"
+profile: feature
+phase: reviewed
+journal:
+  - event: proposed
+    date: "2026-07-16T13:48:14+08:00"
+    profile: feature
+    artifacts: [proposal, design, specs, tasks]
+    tasks_total: 66
+    note: "MVP initialization for travel guide platform with automated data collection and research report generation"
+  - event: plan-reviewed
+    date: "2026-07-16T13:48:14+08:00"
+    session: 1
+    mode: full
+    rounds: 2
+    issues_resolved: 1
+    artifacts_modified: [proposal.md, design.md, specs/report-export/spec.md, tasks.md]
+    note: "PDF export removed from MVP after scope review; overall scope maintained; other risks accepted for 2-4 week timeline"
