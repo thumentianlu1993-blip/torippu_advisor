@@ -1,3 +1,102 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@theme {
+  --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-libre-caslon), Georgia, serif;
+  --font-heading: var(--font-libre-caslon), Georgia, serif;
+
+  --color-background: oklch(0.975 0.005 80);
+  --color-foreground: oklch(0.22 0.02 60);
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.22 0.02 60);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.22 0.02 60);
+  --color-primary: oklch(0.55 0.16 45);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-secondary: oklch(0.94 0.02 80);
+  --color-secondary-foreground: oklch(0.35 0.03 60);
+  --color-muted: oklch(0.94 0.02 85);
+  --color-muted-foreground: oklch(0.55 0.04 60);
+  --color-accent: oklch(0.62 0.14 155);
+  --color-accent-foreground: oklch(0.99 0 0);
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-border: oklch(0.88 0.02 80);
+  --color-input: oklch(0.88 0.02 80);
+  --color-ring: oklch(0.55 0.16 45);
+
+  --color-sand-50: #fbfaf9;
+  --color-sand-100: #f5f3f0;
+  --color-sand-200: #e8e4de;
+  --color-sand-300: #d6cfc5;
+  --color-sand-400: #b8ae9f;
+  --color-sand-500: #9a8d7a;
+  --color-sand-600: #7d715f;
+  --color-sand-700: #665b4d;
+  --color-sand-800: #554b40;
+  --color-sand-900: #493f36;
+
+  --color-terracotta-50: #fdf6f3;
+  --color-terracotta-100: #f9ebe5;
+  --color-terracotta-200: #f2d5c9;
+  --color-terracotta-300: #e9b5a0;
+  --color-terracotta-400: #dd8c6d;
+  --color-terracotta-500: #d16d48;
+  --color-terracotta-600: #c25535;
+  --color-terracotta-700: #a14229;
+  --color-terracotta-800: #853725;
+  --color-terracotta-900: #6d3022;
+
+  --color-emerald-50: #f0fdf4;
+  --color-emerald-100: #dcfce7;
+  --color-emerald-200: #bbf7d0;
+  --color-emerald-300: #86efac;
+  --color-emerald-400: #4ade80;
+  --color-emerald-500: #22c55e;
+  --color-emerald-600: #16a34a;
+  --color-emerald-700: #15803d;
+  --color-emerald-800: #166534;
+  --color-emerald-900: #14532d;
+
+  --radius-lg: 0.75rem;
+  --radius-md: calc(var(--radius-lg) - 2px);
+  --radius-sm: calc(var(--radius-lg) - 4px);
+
+  --animate-fade-in: fade-in 0.4s ease-out forwards;
+  --animate-shimmer: shimmer 1.5s infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes shimmer {
+    100% { transform: translateX(100%); }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading tracking-tight;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .editorial-shadow {
+    box-shadow: 0 1px 3px rgba(45, 42, 38, 0.05), 0 12px 24px rgba(45, 42, 38, 0.08);
+  }
+}

@@ -1,183 +1,304 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { api } from "@/lib/api";
-import CandidateList from "@/app/components/CandidateList";
+import { useCallback, useEffect, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { api, type Project, type Report, type Candidate } from "@/lib/api";
 import ReportNav from "@/app/components/ReportNav";
+import CoreExperiencesSection from "@/app/components/report/CoreExperiencesSection";
+import ImportantExperiencesSection from "@/app/components/report/ImportantExperiencesSection";
+import FoodSection from "@/app/components/report/FoodSection";
+import LodgingSection from "@/app/components/report/LodgingSection";
+import TransportSection from "@/app/components/report/TransportSection";
+import BudgetSection from "@/app/components/report/BudgetSection";
+import TipsSection from "@/app/components/report/TipsSection";
+import ReferenceRoutesSection from "@/app/components/report/ReferenceRoutesSection";
+import ReportSkeleton from "@/app/components/report/ReportSkeleton";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { toast } from "sonner";
+import {
+  MapPin,
+  Calendar,
+  Users,
+  RefreshCw,
+  Download,
+  AlertCircle,
+  Compass,
+} from "lucide-react";
+
+const SECTIONS = [
+  { key: "core_experiences", label: "核心" },
+  { key: "important_experiences", label: "重要" },
+  { key: "food", label: "美食" },
+  { key: "lodging", label: "住宿" },
+  { key: "transport", label: "交通" },
+  { key: "budget", label: "预算" },
+  { key: "tips", label: "贴士" },
+  { key: "reference_routes", label: "路线" },
+];
+
+function statusBadgeVariant(status?: string): "default" | "secondary" | "outline" | "destructive" {
+  switch (status) {
+    case "success":
+      return "default";
+    case "collecting":
+    case "processing":
+      return "secondary";
+    case "failed":
+      return "destructive";
+    default:
+      return "outline";
+  }
+}
+
+function ProjectHeader({
+  project,
+  status,
+  report,
+  isCreator,
+  onRecollect,
+  onExport,
+  recollecting,
+}: {
+  project: Project;
+  status: any;
+  report: Report | null;
+  isCreator: boolean;
+  onRecollect: () => void;
+  onExport: () => void;
+  recollecting: boolean;
+}) {
+  return (
+    <Card className="overflow-hidden editorial-shadow">
+      <CardContent className="p-0">
+        <div className="bg-gradient-to-br from-terracotta-600 to-terracotta-800 px-5 py-6 text-white sm:px-8 sm:py-8">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="secondary"
+              className="bg-white/15 text-white hover:bg-white/20"
+            >
+              {status?.status === "success"
+                ? "已完成"
+                : status?.status === "collecting"
+                ? "采集中"
+                : status?.status === "ready"
+                ? "已就绪"
+                : status?.status || "加载中"}
+            </Badge>
+            {report && (
+              <Badge
+                variant="secondary"
+                className="bg-white/15 text-white hover:bg-white/20"
+              >
+                报告 {report.progress}%
+              </Badge>
+            )}
+          </div>
+          <h1 className="mt-3 font-heading text-2xl font-bold sm:text-3xl lg:text-4xl">
+            {project.destination}
+          </h1>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-white/90">
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar className="size-4" /> {project.duration_days} 天
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <MapPin className="size-4" /> 从 {project.departure} 出发
+            </span>
+            {project.traveler_structure && (
+              <span className="inline-flex items-center gap-1.5">
+                <Users className="size-4" /> {project.traveler_structure}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 border-t bg-muted/30 px-5 py-3 sm:px-8">
+          {isCreator && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRecollect}
+              disabled={recollecting}
+              className="text-xs"
+            >
+              <RefreshCw className={`mr-1 size-3.5 ${recollecting ? "animate-spin" : ""}`} />
+              {recollecting ? "正在重新采集…" : "重新采集"}
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={onExport} className="text-xs">
+            <Download className="mr-1 size-3.5" /> 导出 Google Maps
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function ReportPage() {
-  const { token } = useParams();
-  const [project, setProject] = useState<any | null>(null);
-  const [report, setReport] = useState<any | null>(null);
-  const [candidates, setCandidates] = useState<any[]>([]);
+  const rawToken = useParams().token;
+  const token = Array.isArray(rawToken) ? rawToken[0] : rawToken;
+  const searchParams = useSearchParams();
+  const creatorToken = searchParams.get("creator_token");
+  const [isCreator, setIsCreator] = useState(false);
+
+  const [project, setProject] = useState<Project | null>(null);
+  const [report, setReport] = useState<Report | null>(null);
+  const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [status, setStatus] = useState<any | null>(null);
   const [activeSection, setActiveSection] = useState("core_experiences");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [isCreator] = useState(true); // MVP: treat viewer as creator for editing.
+  const [recollecting, setRecollecting] = useState(false);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
+    if (!token || Array.isArray(token)) return;
     try {
-      const proj = await api.getProjectByToken(token as string);
+      const proj = await api.getProjectByToken(token);
       setProject(proj);
+      setIsCreator(!!creatorToken && String(proj.creator_token) === creatorToken);
       const [rep, cands, stat] = await Promise.all([
-        api.getReport(proj.id),
-        api.getCandidates(proj.id),
-        api.getProjectStatus(proj.id),
+        api.getReport(token),
+        api.getCandidates(token),
+        api.getProjectStatus(token),
       ]);
       setReport(rep);
       setCandidates(cands);
       setStatus(stat);
       setError("");
     } catch (err: any) {
-      setError(err.message || "Failed to load report");
+      setError(err.message || "加载报告失败");
     } finally {
       setLoading(false);
     }
-  };
+  }, [token, creatorToken]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || Array.isArray(token)) return;
     loadData();
-    const interval = setInterval(() => {
-      if (status && status.report_status !== "success") {
-        loadData();
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [token, status?.report_status]);
+  }, [token, loadData]);
+
+  // SSE stream for report progress
+  useEffect(() => {
+    if (!project) return;
+    if (report?.status === "success") return;
+
+    let es: EventSource | null = null;
+    try {
+      es = api.streamReport(project.id);
+      es.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.status || data.progress !== undefined) {
+            setReport((prev) => (prev ? { ...prev, ...data } : { status: data.status, progress: data.progress || 0, content: data.content || {} }));
+          }
+          if (data.status === "success" || data.status === "failed") {
+            loadData();
+          }
+        } catch {
+          // ignore non-JSON messages
+        }
+      };
+      es.onerror = () => {
+        // SSE will retry automatically; if it fails permanently we fall back to silent
+      };
+    } catch {
+      // EventSource not available or failed; ignore
+    }
+    return () => {
+      if (es) es.close();
+    };
+  }, [project, report?.status, loadData]);
 
   const handleExport = async () => {
-    if (!project) return;
-    const data = await api.exportGoogleMaps(project.id);
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${project.destination.replace(/\s+/g, "_")}_google_maps.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    if (!token || Array.isArray(token)) return;
+    try {
+      const data = await api.exportGoogleMaps(token);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project?.destination?.replace(/\s+/g, "_") || "trip"}_google_maps.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("已导出 Google Maps");
+    } catch (err: any) {
+      toast.error(err.message || "导出失败");
+    }
   };
 
   const handleRecollect = async () => {
-    if (!project) return;
-    await api.recollect(project.id);
-    setStatus({ ...status, status: "collecting" });
-    loadData();
+    if (!token || Array.isArray(token)) return;
+    setRecollecting(true);
+    try {
+      await api.recollect(token);
+      setStatus((prev: any) => ({ ...prev, status: "collecting" }));
+      toast.success("已开始重新采集");
+      loadData();
+    } catch (err: any) {
+      toast.error(err.message || "重新采集失败");
+    } finally {
+      setRecollecting(false);
+    }
   };
 
-  if (loading) return <div className="p-8 text-center">Loading...</div>;
-  if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
-  if (!project || !report) return <div className="p-8 text-center">Not found</div>;
+  if (loading) return <ReportSkeleton />;
+  if (error)
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4">
+        <Card className="max-w-md">
+          <CardContent className="flex flex-col items-center py-10 text-center">
+            <AlertCircle className="mb-3 size-10 text-destructive" />
+            <h2 className="font-heading text-lg font-semibold">无法加载报告</h2>
+            <p className="mt-1 text-sm text-muted-foreground">{error}</p>
+            <Button onClick={loadData} className="mt-4">重试</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  if (!project || !report) return <ReportSkeleton />;
 
   const content = report.content || {};
-  const votesRevealed = project.votes_revealed;
 
   return (
-    <main className="min-h-screen p-4 md:p-8">
-      <div className="max-w-4xl mx-auto">
-        <header className="mb-6">
-          <h1 className="text-2xl md:text-3xl font-bold">{project.destination}</h1>
-          <p className="text-gray-600">
-            {project.duration_days} days · {project.departure} · Status: {status?.status}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-2">
-            {isCreator && (
-              <button
-                onClick={handleRecollect}
-                className="px-4 py-2 bg-blue-600 text-white rounded text-sm"
-              >
-                Re-collect
-              </button>
-            )}
-            <button
-              onClick={handleExport}
-              className="px-4 py-2 bg-green-600 text-white rounded text-sm"
-            >
-              Export to Google Maps
-            </button>
-            <span className="text-sm px-3 py-2 bg-gray-100 rounded">
-              Report: {report.status} ({report.progress}%)
-            </span>
-          </div>
-        </header>
+    <main className="min-h-screen bg-background">
+      <div className="mx-auto max-w-5xl px-4 pb-12 sm:px-8">
+        <div className="py-6 sm:py-8">
+          <ProjectHeader
+            project={project}
+            status={status}
+            report={report}
+            isCreator={isCreator}
+            onRecollect={handleRecollect}
+            onExport={handleExport}
+            recollecting={recollecting}
+          />
+        </div>
 
         <ReportNav active={activeSection} onSelect={setActiveSection} />
 
-        <section className="mb-8">
-          {activeSection === "core_experiences" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Core Experiences</h2>
-              {content.core_experiences?.length ? (
-                <ul className="list-disc pl-5 space-y-1">
-                  {content.core_experiences.map((item: any, i: number) => (
-                    <li key={i}>{item.name} — {item.reason}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">No core experiences yet. Wait for collection or add manually.</p>
-              )}
-            </div>
-          )}
-
+        <section className="mt-6 min-h-[50vh]">
+          {activeSection === "core_experiences" && <CoreExperiencesSection content={content} />}
           {activeSection === "important_experiences" && (
-            <CandidateList
+            <ImportantExperiencesSection
               candidates={candidates}
               projectId={project.id}
               isCreator={isCreator}
-              votesRevealed={votesRevealed}
+              votesRevealed={project.votes_revealed}
               onChange={loadData}
             />
           )}
-
-          {activeSection === "food" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Food</h2>
-              <h3 className="font-medium">Reservation Pool</h3>
-              <p className="text-gray-600">{JSON.stringify(content.food?.reservation_pool)}</p>
-              <h3 className="font-medium mt-4">Random Pool</h3>
-              <p className="text-gray-600">{JSON.stringify(content.food?.random_pool)}</p>
-            </div>
-          )}
-
-          {activeSection === "lodging" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Lodging</h2>
-              <pre className="text-sm bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(content.lodging, null, 2)}</pre>
-            </div>
-          )}
-
-          {activeSection === "transport" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Transport</h2>
-              <pre className="text-sm bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(content.transport, null, 2)}</pre>
-            </div>
-          )}
-
-          {activeSection === "budget" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Budget</h2>
-              <pre className="text-sm bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(content.budget, null, 2)}</pre>
-            </div>
-          )}
-
-          {activeSection === "tips" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Tips</h2>
-              <pre className="text-sm bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(content.tips, null, 2)}</pre>
-            </div>
-          )}
-
-          {activeSection === "reference_routes" && (
-            <div>
-              <h2 className="text-xl font-semibold mb-3">Reference Routes</h2>
-              <pre className="text-sm bg-gray-50 p-3 rounded overflow-auto">{JSON.stringify(content.reference_routes, null, 2)}</pre>
-            </div>
-          )}
+          {activeSection === "food" && <FoodSection content={content} />}
+          {activeSection === "lodging" && <LodgingSection content={content} />}
+          {activeSection === "transport" && <TransportSection content={content} />}
+          {activeSection === "budget" && <BudgetSection content={content} />}
+          {activeSection === "tips" && <TipsSection content={content} />}
+          {activeSection === "reference_routes" && <ReferenceRoutesSection content={content} />}
         </section>
 
-        <p className="text-xs text-gray-500 mt-8">{content.source_disclaimer}</p>
+        {content.source_disclaimer && (
+          <p className="mt-10 text-center text-xs text-muted-foreground">{content.source_disclaimer}</p>
+        )}
       </div>
     </main>
   );

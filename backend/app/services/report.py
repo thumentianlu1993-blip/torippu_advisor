@@ -31,7 +31,9 @@ class ReportBuilder:
             "budget": classified.get("budget", {}),
             "tips": classified.get("tips", {}),
             "reference_routes": classified.get("routes", []),
-            "source_disclaimer": "Prices, hours, and booking rules must be re-verified before departure.",
+            "source_disclaimer": (
+                "Prices, hours, and booking rules must be re-verified before departure."
+            ),
         }
         return report
 
@@ -42,22 +44,33 @@ class ReportBuilder:
 
         candidate_texts = []
         for c in self.candidates:
+            raw_data = c.raw_data or {}
+            chinese_tips = raw_data.get("chinese_tips") or []
             candidate_texts.append(
                 {
                     "id": c.id,
                     "name": c.name,
                     "category": c.category.value,
+                    "subcategory": c.subcategory,
                     "area": c.area,
                     "rating": c.rating,
                     "review_count": c.review_count,
+                    "price_level": c.price_level,
+                    "price_range": c.price_range,
+                    "opening_hours": c.opening_hours,
                     "summary": c.summary,
+                    "chinese_focus_summary": c.chinese_focus_summary,
+                    "chinese_tips": chinese_tips[:3],
                     "source": c.source,
+                    "source_url": c.source_url,
                 }
             )
 
         system_prompt = (
-            "You are a travel research assistant. Given a list of travel candidates, "
-            "classify them into a structured JSON report. Output strictly valid JSON."
+            "You are a travel research assistant for Chinese outbound travelers. "
+            "Given a list of travel candidates, classify them into a structured JSON report. "
+            "Use Chinese-language tips (chinese_tips / chinese_focus_summary) to highlight "
+            "advice relevant to Chinese tourists. Output strictly valid JSON."
         )
         user_prompt = f"""
 Destination: {self.project.destination}
@@ -65,7 +78,7 @@ Duration: {self.project.duration_days} days
 Preferences: {self.project.preferences or 'none'}
 Constraints: {self.project.constraints or 'none'}
 
-Candidates:
+Candidates (ratings, review counts, price ranges, opening hours, and Chinese tips are included):
 {json.dumps(candidate_texts, ensure_ascii=False, indent=2)}
 
 Generate JSON with this structure:
@@ -87,10 +100,14 @@ Generate JSON with this structure:
   "tips": {{"pre_trip": [...], "during_trip": [...]}},
   "routes": [{{"name": "...", "highlights": [...], "audience": "..."}}]
 }}
+
+For each candidate, consider: rating, review_count, price_level/range,
+opening_hours, and any Chinese traveler tips. Mention practical advice for
+Chinese tourists when available.
 """
         try:
             return await llm_client.generate_json(system_prompt, user_prompt)
-        except Exception as exc:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
             logger.exception("LLM classification failed")
             return self._fallback_classification()
 
@@ -109,8 +126,12 @@ Generate JSON with this structure:
                 "cultural": by_category.get(CandidateCategory.cultural.value, []),
                 "entertainment": by_category.get(CandidateCategory.entertainment.value, []),
                 "shopping": by_category.get(CandidateCategory.shopping.value, []),
-                "local_specialty": by_category.get(CandidateCategory.local_specialty.value, []),
-                "personal_preference": by_category.get(CandidateCategory.personal_preference.value, []),
+                "local_specialty": by_category.get(
+                    CandidateCategory.local_specialty.value, []
+                ),
+                "personal_preference": by_category.get(
+                    CandidateCategory.personal_preference.value, []
+                ),
                 "niche": by_category.get(CandidateCategory.niche.value, []),
             },
             "food": {

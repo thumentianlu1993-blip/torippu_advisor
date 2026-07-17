@@ -1,12 +1,14 @@
 import logging
 import time
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import AsyncSessionLocal
+from app.database import AsyncSessionLocal, Base, engine
 from app.logging_config import configure_logging
 from app.routers import candidates, projects, votes
 
@@ -14,7 +16,16 @@ configure_logging(settings.LOG_LEVEL)
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Travel Planner API", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Create database tables on startup if they don't exist."""
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
+
+app = FastAPI(title="Travel Planner API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -52,7 +63,10 @@ async def healthz():
             await session.execute(text("SELECT 1"))
         return {"status": "ok", "database": "ok"}
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "database": str(exc)}
+        return JSONResponse(
+            {"status": "error", "database": str(exc)},
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
 
 
 @app.get("/")

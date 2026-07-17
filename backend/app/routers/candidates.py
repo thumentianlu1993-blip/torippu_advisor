@@ -16,6 +16,10 @@ from app.schemas import CandidateCreate, CandidateRead, CandidateUpdate
 router = APIRouter(prefix="/api/projects/{project_id}/candidates", tags=["candidates"])
 
 
+def _candidate_with_counts(candidate, counts: dict) -> CandidateRead:
+    return CandidateRead.model_validate(candidate).model_copy(update=counts)
+
+
 @router.get("", response_model=list[CandidateRead])
 async def read_candidates(
     project_id: int,
@@ -29,12 +33,17 @@ async def read_candidates(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    candidates = await list_candidates(db, project_id, category, tier, area, search)
+    try:
+        candidates = await list_candidates(db, project_id, category, tier, area, search)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
 
     result = []
     for candidate in candidates:
         counts = await get_vote_counts(db, candidate.id)
-        result.append(CandidateRead.model_validate({**candidate.__dict__, **counts}))
+        result.append(_candidate_with_counts(candidate, counts))
     return result
 
 
@@ -49,7 +58,7 @@ async def add_candidate(
     candidate = await create_candidate(db, project_id, data)
     await db.commit()
     counts = await get_vote_counts(db, candidate.id)
-    return CandidateRead.model_validate({**candidate.__dict__, **counts})
+    return _candidate_with_counts(candidate, counts)
 
 
 @router.patch("/{candidate_id}", response_model=CandidateRead)
@@ -70,7 +79,7 @@ async def patch_candidate(
     candidate = await update_candidate(db, candidate, data)
     await db.commit()
     counts = await get_vote_counts(db, candidate.id)
-    return CandidateRead.model_validate({**candidate.__dict__, **counts})
+    return _candidate_with_counts(candidate, counts)
 
 
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)

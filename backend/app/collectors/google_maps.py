@@ -33,7 +33,11 @@ class GoogleMapsCollector(BaseCollector):
                     headers={
                         "Content-Type": "application/json",
                         "X-Goog-Api-Key": self.api_key,
-                        "X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.photos,places.regularOpeningHours",
+                        "X-Goog-FieldMask": (
+                            "places.id,places.displayName,places.formattedAddress,"
+                            "places.location,places.rating,places.userRatingCount,"
+                            "places.priceLevel,places.photos,places.regularOpeningHours"
+                        ),
                     },
                     json={"textQuery": f"top attractions and restaurants in {destination}"},
                 )
@@ -76,7 +80,11 @@ class GoogleMapsCollector(BaseCollector):
                     url,
                     headers={
                         "X-Goog-Api-Key": self.api_key,
-                        "X-Goog-FieldMask": "id,displayName,formattedAddress,location,rating,userRatingCount,priceLevel,photos,regularOpeningHours,editorialSummary,reviews",
+                        "X-Goog-FieldMask": (
+                            "id,displayName,formattedAddress,location,rating,"
+                            "userRatingCount,priceLevel,photos,regularOpeningHours,"
+                            "editorialSummary,reviews"
+                        ),
                     },
                 )
                 response.raise_for_status()

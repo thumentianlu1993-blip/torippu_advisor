@@ -2,7 +2,9 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.models import CandidateCategory, CandidateTier
 
 
 class ProjectCreate(BaseModel):
@@ -21,6 +23,7 @@ class ProjectRead(BaseModel):
 
     id: int
     token: UUID
+    creator_token: UUID
     destination: str
     duration_days: int
     travel_time: str | None
@@ -60,6 +63,26 @@ class CandidateCreate(BaseModel):
     source: str = "manual"
     source_url: str | None = None
     summary: str | None = None
+    photos: list[Any] | None = None
+    raw_data: dict[str, Any] | None = None
+    chinese_focus_summary: str | None = None
+    pros: list[str] | None = None
+    cons: list[str] | None = None
+    review_snippets: list[dict[str, Any]] | None = None
+
+    @field_validator("category", mode="before")
+    @classmethod
+    def _validate_category(cls, value: str) -> str:
+        if value not in CandidateCategory._value2member_map_:
+            raise ValueError(f"invalid category: {value}")
+        return value
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _validate_tier(cls, value: str) -> str:
+        if value not in CandidateTier._value2member_map_:
+            raise ValueError(f"invalid tier: {value}")
+        return value
 
 
 class CandidateUpdate(BaseModel):
@@ -67,6 +90,18 @@ class CandidateUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=500)
     area: str | None = None
     summary: str | None = None
+    pros: list[str] | None = None
+    cons: list[str] | None = None
+    review_snippets: list[dict[str, Any]] | None = None
+
+    @field_validator("tier", mode="before")
+    @classmethod
+    def _validate_tier(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if value not in CandidateTier._value2member_map_:
+            raise ValueError(f"invalid tier: {value}")
+        return value
 
 
 class CandidateRead(BaseModel):
@@ -95,6 +130,9 @@ class CandidateRead(BaseModel):
     negative_summary: str | None
     pitfalls_summary: str | None
     chinese_focus_summary: str | None
+    pros: list[str]
+    cons: list[str]
+    review_snippets: list[dict[str, Any]]
     like_count: int = 0
     dislike_count: int = 0
     neutral_count: int = 0

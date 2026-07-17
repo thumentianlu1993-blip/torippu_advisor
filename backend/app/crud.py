@@ -16,7 +16,6 @@ from app.models import (
 )
 from app.schemas import CandidateCreate, CandidateUpdate, ProjectCreate, VoteCreate
 
-
 # Projects
 
 
@@ -121,6 +120,12 @@ async def create_candidate(db: AsyncSession, project_id: int, data: CandidateCre
         source=data.source,
         source_url=data.source_url,
         summary=data.summary,
+        photos=data.photos or [],
+        raw_data=data.raw_data or {},
+        chinese_focus_summary=data.chinese_focus_summary,
+        pros=data.pros or [],
+        cons=data.cons or [],
+        review_snippets=data.review_snippets or [],
     )
     db.add(candidate)
     await db.flush()
@@ -139,6 +144,12 @@ async def update_candidate(
         candidate.area = data.area
     if data.summary is not None:
         candidate.summary = data.summary
+    if data.pros is not None:
+        candidate.pros = data.pros
+    if data.cons is not None:
+        candidate.cons = data.cons
+    if data.review_snippets is not None:
+        candidate.review_snippets = data.review_snippets
     await db.flush()
     await db.refresh(candidate)
     return candidate

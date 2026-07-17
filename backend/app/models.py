@@ -1,7 +1,6 @@
 import enum
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from sqlalchemy import (
     JSON,
@@ -13,6 +12,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -74,6 +74,9 @@ class Project(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     token = Column(UUID(as_uuid=True), unique=True, index=True, default=uuid.uuid4)
+    creator_token = Column(
+        UUID(as_uuid=True), unique=True, index=True, default=uuid.uuid4, nullable=False
+    )
     destination = Column(String(255), nullable=False)
     duration_days = Column(Integer, nullable=False)
     travel_time = Column(String(100), nullable=True)
@@ -82,15 +85,23 @@ class Project(Base):
     preferences = Column(Text, nullable=True)
     budget_level = Column(String(50), nullable=True)
     constraints = Column(Text, nullable=True)
-    status = Column(Enum(ProjectStatus, native_enum=False), default=ProjectStatus.draft, nullable=False)
+    status = Column(
+        Enum(ProjectStatus, native_enum=False),
+        default=ProjectStatus.draft,
+        nullable=False,
+    )
     votes_revealed = Column(
         Integer, default=0, nullable=False, doc="0=hidden, 1=revealed aggregate votes"
     )
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
-    candidates = relationship("Candidate", back_populates="project", cascade="all, delete-orphan")
-    report = relationship("Report", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    candidates = relationship(
+        "Candidate", back_populates="project", cascade="all, delete-orphan"
+    )
+    report = relationship(
+        "Report", back_populates="project", uselist=False, cascade="all, delete-orphan"
+    )
     collection_runs = relationship(
         "CollectionRun", back_populates="project", cascade="all, delete-orphan"
     )
@@ -100,8 +111,14 @@ class Report(Base):
     __tablename__ = "reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True)
-    status = Column(Enum(CollectionStatus, native_enum=False), default=CollectionStatus.pending, nullable=False)
+    project_id = Column(
+        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    status = Column(
+        Enum(CollectionStatus, native_enum=False),
+        default=CollectionStatus.pending,
+        nullable=False,
+    )
     progress = Column(Integer, default=0, nullable=False, doc="0-100 percentage")
     content = Column(JSON, nullable=True, default=dict)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -114,12 +131,21 @@ class Candidate(Base):
     __tablename__ = "candidates"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    project_id = Column(
+        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     external_id = Column(String(255), nullable=True, index=True)
     name = Column(String(500), nullable=False)
-    category = Column(Enum(CandidateCategory, native_enum=False), nullable=False, index=True)
+    category = Column(
+        Enum(CandidateCategory, native_enum=False), nullable=False, index=True
+    )
     subcategory = Column(String(100), nullable=True)
-    tier = Column(Enum(CandidateTier, native_enum=False), default=CandidateTier.optional, nullable=False, index=True)
+    tier = Column(
+        Enum(CandidateTier, native_enum=False),
+        default=CandidateTier.optional,
+        nullable=False,
+        index=True,
+    )
     area = Column(String(255), nullable=True, index=True)
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
@@ -137,6 +163,9 @@ class Candidate(Base):
     negative_summary = Column(Text, nullable=True)
     pitfalls_summary = Column(Text, nullable=True)
     chinese_focus_summary = Column(Text, nullable=True)
+    pros = Column(JSON, nullable=True, default=list)
+    cons = Column(JSON, nullable=True, default=list)
+    review_snippets = Column(JSON, nullable=True, default=list)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
@@ -147,9 +176,14 @@ class Candidate(Base):
 
 class Vote(Base):
     __tablename__ = "votes"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "session_id", name="uq_vote_candidate_session"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True)
+    candidate_id = Column(
+        Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     session_id = Column(String(255), nullable=False, index=True)
     vote_type = Column(Enum(VoteType, native_enum=False), nullable=False)
     created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
@@ -162,8 +196,14 @@ class CollectionRun(Base):
     __tablename__ = "collection_runs"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(Enum(CollectionStatus, native_enum=False), default=CollectionStatus.pending, nullable=False)
+    project_id = Column(
+        Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status = Column(
+        Enum(CollectionStatus, native_enum=False),
+        default=CollectionStatus.pending,
+        nullable=False,
+    )
     source_statuses = Column(JSON, nullable=True, default=dict)
     error_log = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
@@ -177,7 +217,9 @@ class Image(Base):
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True, index=True)
-    candidate_id = Column(Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True)
+    candidate_id = Column(
+        Integer, ForeignKey("candidates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     url = Column(Text, nullable=False)
     local_path = Column(Text, nullable=True)
     source = Column(String(100), nullable=False)

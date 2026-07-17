@@ -26,7 +26,11 @@ def generate_report(self, project_id: int):
             )
             report = report_result.scalar_one_or_none()
             if not report:
-                report = Report(project_id=project_id, status=CollectionStatus.generating, progress=0)
+                report = Report(
+                    project_id=project_id,
+                    status=CollectionStatus.generating,
+                    progress=0,
+                )
                 session.add(report)
 
             report.status = CollectionStatus.generating
