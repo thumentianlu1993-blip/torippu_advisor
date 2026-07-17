@@ -69,7 +69,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     # Exposed on localhost only; the host Nginx proxies travel.umafans.run here.
     ports:
       - "127.0.0.1:8000:8000"

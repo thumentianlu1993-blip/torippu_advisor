@@ -36,8 +36,11 @@ Add an A record for `travel.umafans.run` pointing to the server IP. Wait for pro
    docker compose -f docker-compose.prod.yml up --build -d
    ```
 
-4. Run database migrations:
+4. Database migrations run automatically when the backend container starts
+   (`alembic upgrade head` executes before uvicorn launches). To verify or
+   re-apply manually:
    ```bash
+   docker compose -f docker-compose.prod.yml exec backend alembic current
    docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
    ```
 
