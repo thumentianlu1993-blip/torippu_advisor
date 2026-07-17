@@ -1,6 +1,6 @@
 # API Key 配置指南
 
-本文档列出本项目所有外部数据与 LLM 服务的 API Key 来源、获取方式及价格。请将实际 Key 填入 `backend/.env`（该文件不会提交到 Git）。
+本文档列出本项目所有外部数据与 LLM 服务的 API Key 来源、获取方式及价格。请将实际 Key 填入仓库根目录的 `.env`（该文件不会提交到 Git；Docker Compose 会把其中的 key 注入 backend/worker 容器）。
 
 > 最小可跑通配置：**SiliconFlow + Serper + Jina AI Reader + Apify + Foursquare**，其余按需启用。
 

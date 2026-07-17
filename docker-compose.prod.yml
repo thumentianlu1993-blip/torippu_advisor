@@ -7,6 +7,7 @@ x-backend-env: &backend-env
   - CELERY_BROKER_URL=${CELERY_BROKER_URL}
   - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
   - LOG_LEVEL=${LOG_LEVEL:-INFO}
+  - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
   # LLM
   - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
   # Search + content extraction

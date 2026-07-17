@@ -26,10 +26,11 @@ Add an A record for `travel.umafans.run` pointing to the server IP. Wait for pro
    Fill in all required keys, especially:
    - `SILICONFLOW_API_KEY`
    - `GOOGLE_MAPS_API_KEY`
-   - `XIAOHONGSHU_API_KEY`
-   - `TRIPADVISOR_API_KEY`
+   - Any optional collector keys you want to enable (see `docs/API_KEYS.md`;
+     missing keys degrade gracefully per collector)
    - `DATABASE_URL` pointing to the `postgres` service
    - `NEXT_PUBLIC_API_URL=https://travel.umafans.run`
+   - `CORS_ORIGINS=https://travel.umafans.run`
 
 3. Build and start the production stack:
    ```bash

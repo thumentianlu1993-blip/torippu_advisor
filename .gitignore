@@ -64,6 +64,7 @@ celerybeat-schedule*
 # Claude Code local tooling
 .claude/plugins/
 .claude/settings.json
+.claude/skills/
 frontend/.claude/
 
 # Misc

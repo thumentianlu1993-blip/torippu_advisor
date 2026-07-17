@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     BING_SEARCH_API_KEY: str = ""
     YELP_API_KEY: str = ""
     LOG_LEVEL: str = "INFO"
+    # Comma-separated list of origins allowed to call the API cross-origin.
+    CORS_ORIGINS: str = "http://localhost:3000"
 
 
 settings = Settings()

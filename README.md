@@ -32,10 +32,12 @@ A web application that automates travel research and produces an "oversaturated 
 ```
 .
 ├── frontend/          # Next.js application
-├── backend/           # FastAPI application
+├── backend/           # FastAPI application (app/, alembic/, tests/)
+├── docs/              # API key sourcing guide, planning docs
+├── openspec/          # Spec-driven change management (specs/ + changes/)
+├── nginx/             # Server block for travel.umafans.run
 ├── docker-compose.yml
 ├── docker-compose.prod.yml
-├── nginx/
 └── .env.example
 ```
 
@@ -43,4 +45,21 @@ A web application that automates travel research and produces an "oversaturated 
 
 - The backend uses Celery workers for asynchronous data collection and report generation.
 - PostgreSQL and Redis run in dedicated Docker Compose services.
-- See individual `frontend/README.md` and `backend/README.md` for service-level details.
+- Database schema is managed by Alembic; the backend container runs
+  `alembic upgrade head` automatically before uvicorn starts.
+- Backend checks (run inside the container):
+  ```bash
+  docker compose exec backend ruff check app tests
+  docker compose exec backend python -m pytest
+  ```
+- Frontend type check:
+  ```bash
+  docker compose exec frontend npx tsc --noEmit
+  ```
+- Sharing model: report pages are public via `/p/{token}`; the creator's URL
+  carries an additional `?creator_token=…` credential that unlocks editing
+  (candidate tier changes, additions, deletions, re-collection) via the
+  `X-Creator-Token` header. Voting requires no registration.
+- External API keys are optional and degrade gracefully per collector; see
+  `docs/API_KEYS.md` for where to get each key and current pricing.
+- Production deployment (Nginx + subdomain coexistence): see `DEPLOYMENT.md`.
