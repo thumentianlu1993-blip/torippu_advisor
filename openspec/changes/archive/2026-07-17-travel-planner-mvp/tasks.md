@@ -93,8 +93,8 @@
 
 ## 10. Final Review & Handoff
 
-- [ ] 10.1 Run `/plan-eng-review` on proposal/design/specs/tasks
-- [ ] 10.2 Address review findings
-- [ ] 10.3 Run `/opsx:apply` to implement tasks incrementally
-- [ ] 10.4 Run `/review` on final code
+- [x] 10.1 Run `/plan-eng-review` on proposal/design/specs/tasks
+- [x] 10.2 Address review findings
+- [x] 10.3 Run `/opsx:apply` to implement tasks incrementally
+- [x] 10.4 Run `/review` on final code
 - [ ] 10.5 Run `/opsx:archive` to close the change

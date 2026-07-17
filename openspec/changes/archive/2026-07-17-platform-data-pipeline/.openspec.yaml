@@ -1,0 +1,19 @@
+schema: spec-driven
+created: "2026-07-17"
+profile: feature
+phase: reviewed
+journal:
+  - event: proposed
+    date: "2026-07-17T23:27:00+08:00"
+    profile: feature
+    artifacts: [proposal, design, specs, tasks]
+    tasks_total: 20
+    note: "Search-driven web extraction layer plus third-party platform API collectors, all with graceful degradation"
+  - event: plan-reviewed
+    date: "2026-07-18T04:30:00+08:00"
+    session: 1
+    mode: full
+    rounds: 1
+    issues_resolved: 1
+    artifacts_modified: []
+    note: "Pre-archive review of completed implementation. Resolved: creator_token leaked via public by-token responses while mutations required no credential (fixed in backend+frontend, commit 9c8e63e). Accepted: vote session spoofing via client-chosen x-session-id (MVP anonymous voting); collectors report available on placeholder keys but fail gracefully at call time."
