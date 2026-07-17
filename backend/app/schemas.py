@@ -19,11 +19,12 @@ class ProjectCreate(BaseModel):
 
 
 class ProjectRead(BaseModel):
+    """Public project representation — safe to expose via the share token."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     token: UUID
-    creator_token: UUID
     destination: str
     duration_days: int
     travel_time: str | None
@@ -36,6 +37,15 @@ class ProjectRead(BaseModel):
     votes_revealed: bool
     created_at: datetime
     updated_at: datetime
+
+
+class ProjectCreated(ProjectRead):
+    """Returned only by POST /api/projects — includes the creator credential.
+
+    The creator token must never appear in public (by-token) responses.
+    """
+
+    creator_token: UUID
 
 
 class ProjectStatusRead(BaseModel):

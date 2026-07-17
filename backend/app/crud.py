@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import (
@@ -201,7 +202,20 @@ async def cast_vote(
         vote_type=VoteType(data.vote_type),
     )
     db.add(vote)
-    await db.flush()
+    try:
+        # Savepoint so a concurrent insert of the same (candidate, session)
+        # only rolls back this insert, not the request's transaction.
+        async with db.begin_nested():
+            await db.flush()
+    except IntegrityError:
+        # Lost the race against a concurrent vote from the same session;
+        # fall back to updating the row that won.
+        existing = await get_vote_by_session(db, candidate_id, session_id)
+        if existing is None:  # winner not committed yet — surface as conflict
+            raise
+        existing.vote_type = VoteType(data.vote_type)
+        await db.flush()
+        return existing
     await db.refresh(vote)
     return vote
 

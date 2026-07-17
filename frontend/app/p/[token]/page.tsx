@@ -156,7 +156,18 @@ export default function ReportPage() {
     try {
       const proj = await api.getProjectByToken(token);
       setProject(proj);
-      setIsCreator(!!creatorToken && String(proj.creator_token) === creatorToken);
+      // Creator status is validated server-side; the public project
+      // response intentionally no longer carries the creator token.
+      if (creatorToken) {
+        try {
+          const check = await api.creatorCheck(token, creatorToken);
+          setIsCreator(!!check.creator);
+        } catch {
+          setIsCreator(false);
+        }
+      } else {
+        setIsCreator(false);
+      }
       const [rep, cands, stat] = await Promise.all([
         api.getReport(token),
         api.getCandidates(token),
@@ -231,7 +242,7 @@ export default function ReportPage() {
     if (!token || Array.isArray(token)) return;
     setRecollecting(true);
     try {
-      await api.recollect(token);
+      await api.recollect(token, creatorToken || "");
       setStatus((prev: any) => ({ ...prev, status: "collecting" }));
       toast.success("已开始重新采集");
       loadData();
@@ -284,6 +295,7 @@ export default function ReportPage() {
               candidates={candidates}
               projectId={project.id}
               isCreator={isCreator}
+              creatorToken={creatorToken}
               votesRevealed={project.votes_revealed}
               onChange={loadData}
             />

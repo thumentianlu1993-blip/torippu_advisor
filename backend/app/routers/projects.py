@@ -1,10 +1,11 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_creator
 from app.celery_app import celery_app
 from app.crud import (
     create_collection_run,
@@ -17,7 +18,7 @@ from app.crud import (
 )
 from app.database import AsyncSessionLocal, get_db
 from app.models import Project, ProjectStatus, Report
-from app.schemas import ProjectCreate, ProjectRead, ProjectStatusRead
+from app.schemas import ProjectCreate, ProjectCreated, ProjectRead, ProjectStatusRead
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -29,7 +30,7 @@ async def _get_project_by_token_or_404(db: AsyncSession, token: UUID) -> Project
     return project
 
 
-@router.post("", response_model=ProjectRead, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectCreated, status_code=status.HTTP_201_CREATED)
 async def create_new_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
     project = await create_project(db, data)
     await get_or_create_report(db, project.id)
@@ -56,6 +57,20 @@ async def read_project_by_token(token: UUID, db: AsyncSession = Depends(get_db))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+@router.get("/by-token/{token}/creator-check")
+async def creator_check(
+    token: UUID,
+    x_creator_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate a creator token without exposing it in any other response."""
+    project = await _get_project_by_token_or_404(db, token)
+    return {
+        "creator": bool(x_creator_token)
+        and x_creator_token == str(project.creator_token)
+    }
 
 
 @router.get("/{project_id}/status", response_model=ProjectStatusRead)
@@ -226,8 +241,13 @@ async def export_google_maps_by_token(token: UUID, db: AsyncSession = Depends(ge
 
 
 @router.post("/by-token/{token}/recollect", response_model=ProjectStatusRead)
-async def recollect_project_by_token(token: UUID, db: AsyncSession = Depends(get_db)):
+async def recollect_project_by_token(
+    token: UUID,
+    x_creator_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
     project = await _get_project_by_token_or_404(db, token)
+    require_creator(project, x_creator_token)
     project.status = ProjectStatus.collecting
     run = await create_collection_run(db, project.id)
     await db.commit()
@@ -239,10 +259,15 @@ async def recollect_project_by_token(token: UUID, db: AsyncSession = Depends(get
 
 
 @router.post("/{project_id}/recollect", response_model=ProjectStatusRead)
-async def recollect_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def recollect_project(
+    project_id: int,
+    x_creator_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+):
     project = await get_project(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    require_creator(project, x_creator_token)
 
     project.status = ProjectStatus.collecting
     run = await create_collection_run(db, project_id)

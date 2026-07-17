@@ -105,12 +105,14 @@ export default function CandidateCard({
   candidate,
   projectId,
   isCreator,
+  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidate: any;
   projectId: number;
   isCreator: boolean;
+  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
@@ -137,7 +139,7 @@ export default function CandidateCard({
     if (busy || !value) return;
     setBusy(true);
     try {
-      await api.updateCandidate(projectId, candidate.id, { tier: value });
+      await api.updateCandidate(projectId, candidate.id, { tier: value }, creatorToken || "");
       onChange();
       toast.success("等级已更新");
     } catch (err: any) {
@@ -150,7 +152,7 @@ export default function CandidateCard({
   const handleDelete = async () => {
     if (!confirm("确定删除这个候选？")) return;
     try {
-      await api.deleteCandidate(projectId, candidate.id);
+      await api.deleteCandidate(projectId, candidate.id, creatorToken || "");
       onChange();
       toast.success("已删除");
     } catch (err: any) {

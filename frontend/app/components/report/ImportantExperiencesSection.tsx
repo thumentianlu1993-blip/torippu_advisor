@@ -5,12 +5,14 @@ export default function ImportantExperiencesSection({
   candidates,
   projectId,
   isCreator,
+  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidates: any[];
   projectId: number;
   isCreator: boolean;
+  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
@@ -26,6 +28,7 @@ export default function ImportantExperiencesSection({
         candidates={candidates}
         projectId={projectId}
         isCreator={isCreator}
+        creatorToken={creatorToken}
         votesRevealed={votesRevealed}
         onChange={onChange}
       />

@@ -19,6 +19,46 @@ async def test_create_project(client):
     assert data["departure"] == "Home"
     assert data["status"] == "draft"
     assert "token" in data
+    # The creation response is the only place the creator token appears.
+    assert "creator_token" in data
+
+
+@pytest.mark.asyncio
+async def test_creator_token_not_leaked_by_public_endpoints(client):
+    create_response = await client.post(
+        "/api/projects",
+        json={"destination": "Leak City", "duration_days": 2, "departure": "A"},
+    )
+    project = create_response.json()
+
+    for url in (
+        f"/api/projects/by-token/{project['token']}",
+        f"/api/projects/{project['id']}",
+    ):
+        response = await client.get(url)
+        assert response.status_code == 200
+        assert "creator_token" not in response.json()
+
+
+@pytest.mark.asyncio
+async def test_creator_check(client):
+    create_response = await client.post(
+        "/api/projects",
+        json={"destination": "Check City", "duration_days": 2, "departure": "A"},
+    )
+    project = create_response.json()
+    url = f"/api/projects/by-token/{project['token']}/creator-check"
+
+    response = await client.get(url)
+    assert response.json() == {"creator": False}
+
+    response = await client.get(url, headers={"X-Creator-Token": "wrong"})
+    assert response.json() == {"creator": False}
+
+    response = await client.get(
+        url, headers={"X-Creator-Token": project["creator_token"]}
+    )
+    assert response.json() == {"creator": True}
 
 
 @pytest.mark.asyncio

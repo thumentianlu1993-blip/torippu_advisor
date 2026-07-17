@@ -58,12 +58,14 @@ export default function CandidateList({
   candidates,
   projectId,
   isCreator,
+  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidates: any[];
   projectId: number;
   isCreator: boolean;
+  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
@@ -305,6 +307,7 @@ export default function CandidateList({
               candidate={c}
               projectId={projectId}
               isCreator={isCreator}
+              creatorToken={creatorToken}
               votesRevealed={votesRevealed}
               onChange={onChange}
             />

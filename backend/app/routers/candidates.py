@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import require_creator
 from app.crud import (
     create_candidate,
     delete_candidate,
@@ -49,11 +50,15 @@ async def read_candidates(
 
 @router.post("", response_model=CandidateRead, status_code=status.HTTP_201_CREATED)
 async def add_candidate(
-    project_id: int, data: CandidateCreate, db: AsyncSession = Depends(get_db)
+    project_id: int,
+    data: CandidateCreate,
+    x_creator_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
 ):
     project = await get_project(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    require_creator(project, x_creator_token)
 
     candidate = await create_candidate(db, project_id, data)
     await db.commit()
@@ -66,11 +71,13 @@ async def patch_candidate(
     project_id: int,
     candidate_id: int,
     data: CandidateUpdate,
+    x_creator_token: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     project = await get_project(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    require_creator(project, x_creator_token)
 
     candidate = await get_candidate(db, candidate_id)
     if not candidate or candidate.project_id != project_id:
@@ -84,11 +91,15 @@ async def patch_candidate(
 
 @router.delete("/{candidate_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_candidate(
-    project_id: int, candidate_id: int, db: AsyncSession = Depends(get_db)
+    project_id: int,
+    candidate_id: int,
+    x_creator_token: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
 ):
     project = await get_project(db, project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    require_creator(project, x_creator_token)
 
     candidate = await get_candidate(db, candidate_id)
     if not candidate or candidate.project_id != project_id:
