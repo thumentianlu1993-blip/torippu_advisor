@@ -11,6 +11,13 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+def _is_quota_error(exc: Exception) -> bool:
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response.status_code == 429
+    )
+
+
 def _broad_queries(destination: str) -> list[str]:
     """Build broad-search queries for a destination.
 
@@ -32,6 +39,9 @@ class GoogleMapsCollector(BaseCollector):
         self.api_key = settings.GOOGLE_MAPS_API_KEY
         self.base_url = "https://places.googleapis.com/v1/places:searchText"
         self.detail_url = "https://places.googleapis.com/v1/places/{place_id}"
+        # Set when the Places API answers 429; short-circuits further
+        # detail calls for the rest of the process lifetime.
+        self._quota_exhausted = False
 
     async def is_available(self) -> bool:
         return bool(self.api_key)
@@ -102,6 +112,12 @@ class GoogleMapsCollector(BaseCollector):
         place_id = candidate.get("external_id")
         if not place_id:
             return CollectorResult(source=self.name, success=True, data=candidate)
+        if self._quota_exhausted:
+            return CollectorResult(
+                source=self.name,
+                success=False,
+                error="Places daily quota exhausted; detail call skipped",
+            )
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 url = self.detail_url.format(place_id=place_id)
@@ -138,6 +154,9 @@ class GoogleMapsCollector(BaseCollector):
                 }
                 return CollectorResult(source=self.name, success=True, data=detail)
         except Exception as exc:  # noqa: BLE001
+            if _is_quota_error(exc):
+                self._quota_exhausted = True
+                logger.warning("Google Maps daily quota exhausted; opening circuit")
             logger.exception("Google Maps detail collection failed for %s", place_id)
             return CollectorResult(source=self.name, success=False, error=str(exc))
 

@@ -88,3 +88,28 @@ async def test_broad_empty_results_still_success(collector):
 
     assert result.success is True
     assert result.data == []
+
+
+@pytest.mark.asyncio
+async def test_detail_circuit_breaker_opens_on_quota_error(collector):
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            429, json={"error": {"status": "RESOURCE_EXHAUSTED"}}
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    candidate = {"external_id": "place-1", "name": "浅草寺"}
+    with patch(
+        "app.collectors.google_maps.httpx.AsyncClient", return_value=client
+    ):
+        first = await collector.collect_detail(dict(candidate), {})
+        second = await collector.collect_detail(dict(candidate), {})
+
+    assert first.success is False
+    assert calls == 1  # first 429 opened the circuit
+    assert second.success is False
+    assert "quota" in second.error.lower()
