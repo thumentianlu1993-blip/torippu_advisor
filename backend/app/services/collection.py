@@ -26,9 +26,12 @@ def _normalize_category(source: str, raw: dict[str, Any]) -> CandidateCategory:
 
     if (
         "restaurant" in name
-        or "food" in category_text
         or "cafe" in name
         or "bar" in name
+        or any(
+            k in category_text
+            for k in ("restaurant", "food", "cafe", "bar", "bakery", "meal", "diner")
+        )
     ):
         return CandidateCategory.food
     if (
@@ -36,20 +39,41 @@ def _normalize_category(source: str, raw: dict[str, Any]) -> CandidateCategory:
         or "inn" in name
         or "hostel" in name
         or "lodging" in source
-        or "hotel" in category_text
+        or any(k in category_text for k in ("hotel", "lodging", "resort", "ryokan"))
     ):
         return CandidateCategory.lodging
     if (
         "museum" in name
         or "temple" in name
         or "shrine" in name
-        or "history" in category_text
-        or "cultural" in category_text
+        or any(
+            k in category_text
+            for k in (
+                "museum",
+                "temple",
+                "shrine",
+                "church",
+                "place_of_worship",
+                "history",
+                "cultural",
+                "castle",
+            )
+        )
     ):
         return CandidateCategory.cultural
-    if "park" in name or "nature" in category_text or "beach" in name:
+    if (
+        "park" in name
+        or "beach" in name
+        or "garden" in name
+        or any(
+            k in category_text
+            for k in ("park", "nature", "garden", "beach", "natural_features")
+        )
+    ):
         return CandidateCategory.natural
-    if "shopping" in category_text or "mall" in name:
+    if "mall" in name or any(
+        k in category_text for k in ("shopping", "market", "store", "mall")
+    ):
         return CandidateCategory.shopping
     return CandidateCategory.entertainment
 

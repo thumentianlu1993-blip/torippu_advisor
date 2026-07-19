@@ -53,7 +53,8 @@ class GoogleMapsCollector(BaseCollector):
                             "X-Goog-FieldMask": (
                                 "places.id,places.displayName,places.formattedAddress,"
                                 "places.location,places.rating,places.userRatingCount,"
-                                "places.priceLevel,places.photos,places.regularOpeningHours"
+                                "places.priceLevel,places.photos,places.regularOpeningHours,"
+                                "places.types"
                             ),
                         },
                         json={"textQuery": query, "languageCode": "zh-CN"},
@@ -91,6 +92,7 @@ class GoogleMapsCollector(BaseCollector):
             "price_level": self._price_level(place.get("priceLevel")),
             "photos": [p.get("name") for p in place.get("photos", [])[:3]],
             "opening_hours": self._hours(place.get("regularOpeningHours")),
+            "categories": place.get("types") or [],
             "source": self.name,
         }
 
@@ -105,12 +107,13 @@ class GoogleMapsCollector(BaseCollector):
                 url = self.detail_url.format(place_id=place_id)
                 response = await client.get(
                     url,
+                    params={"languageCode": "zh-CN"},
                     headers={
                         "X-Goog-Api-Key": self.api_key,
                         "X-Goog-FieldMask": (
                             "id,displayName,formattedAddress,location,rating,"
                             "userRatingCount,priceLevel,photos,regularOpeningHours,"
-                            "editorialSummary,reviews"
+                            "editorialSummary,reviews,types"
                         ),
                     },
                 )
@@ -130,6 +133,7 @@ class GoogleMapsCollector(BaseCollector):
                     "opening_hours": self._hours(place.get("regularOpeningHours")),
                     "summary": place.get("editorialSummary", {}).get("text"),
                     "reviews": self._extract_reviews(place.get("reviews", [])),
+                    "categories": place.get("types") or [],
                     "source": self.name,
                 }
                 return CollectorResult(source=self.name, success=True, data=detail)

@@ -48,6 +48,13 @@ def _collect_texts(raw_data: dict[str, Any]) -> tuple[list[str], list[dict[str, 
     texts: list[str] = []
     snippets: list[dict[str, Any]] = []
 
+    # Editorial summaries (e.g. Google Places) give insight material even
+    # when no user reviews are available.
+    summary = raw_data.get("summary")
+    if isinstance(summary, str) and summary.strip():
+        texts.append(summary)
+        snippets.append({"source": "简介", "text": summary[:300], "url": None})
+
     for review in raw_data.get("reviews", []) or []:
         text = review.get("text") or review.get("review")
         if text:
