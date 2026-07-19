@@ -12,12 +12,14 @@ from app.collectors.xiaohongshu import XiaohongshuCollector
 
 
 class XhsSettings:
-    XIAOHONGSHU_API_KEY = "xhs-key"
-    XIAOHONGSHU_API_BASE_URL = "https://api.tikhub.io"
-    XIAOHONGSHU_API_ENDPOINT = "/search"
+    TIKHUB_API_KEY = "tikhub-key"
+    XIAOHONGSHU_API_KEY = ""
+    XIAOHONGSHU_API_BASE_URL = ""
+    XIAOHONGSHU_API_ENDPOINT = ""
 
 
 class XhsSettingsDisabled:
+    TIKHUB_API_KEY = ""
     XIAOHONGSHU_API_KEY = ""
     XIAOHONGSHU_API_BASE_URL = ""
     XIAOHONGSHU_API_ENDPOINT = ""
@@ -45,25 +47,57 @@ async def test_xiaohongshu_unavailable_without_key(xhs_collector_disabled):
     assert await xhs_collector_disabled.is_available() is False
 
 
+def _tikhub_payload(titles: list[str]) -> dict:
+    """Build a TikHub App V2 search_notes response for the given titles."""
+    return {
+        "data": {
+            "code": 0,
+            "success": True,
+            "data": {
+                "items": [
+                    {
+                        "model_type": "note",
+                        "note": {
+                            "id": f"note-{i}",
+                            "title": title,
+                            "desc": f"{title} 正文",
+                            "xsec_token": "tok",
+                            "collected_count": 100 + i,
+                            "liked_count": 200 + i,
+                        },
+                    }
+                    for i, title in enumerate(titles)
+                ]
+            },
+        }
+    }
+
+
 @pytest.mark.asyncio
-async def test_xiaohongshu_collect_broad_returns_empty(xhs_collector):
-    result = await xhs_collector.collect_broad("Tokyo", {})
+async def test_xiaohongshu_collect_broad_returns_tips_container(xhs_collector):
+    mock_response = AsyncMock(spec=httpx.Response)
+    mock_response.json.return_value = _tikhub_payload(["东京旅游攻略", "东京避雷"])
+    mock_response.raise_for_status = Mock()
+    mock_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_client.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
+    mock_client.__aexit__.return_value = False
+
+    with patch("app.collectors.xiaohongshu.httpx.AsyncClient", return_value=mock_client):
+        result = await xhs_collector.collect_broad("东京", {})
+
     assert result.success is True
-    assert result.data == []
+    assert len(result.data) == 1
+    tips = result.data[0]["chinese_tips"]
+    assert tips[0]["title"] == "东京旅游攻略"
+    assert tips[0]["source"] == "xiaohongshu"
+    assert tips[0]["url"].startswith("https://www.xiaohongshu.com/explore/")
+    assert "xsec_token=" in tips[0]["url"]
 
 
 @pytest.mark.asyncio
 async def test_xiaohongshu_collect_detail_enriches(xhs_collector):
     mock_response = AsyncMock(spec=httpx.Response)
-    mock_response.json.return_value = {
-        "posts": [
-            {
-                "title": "Tokyo tips",
-                "excerpt": "Great spot",
-                "url": "http://xhs/1",
-            }
-        ]
-    }
+    mock_response.json.return_value = _tikhub_payload(["Tokyo tips"])
     mock_response.raise_for_status = Mock()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
@@ -77,6 +111,7 @@ async def test_xiaohongshu_collect_detail_enriches(xhs_collector):
     assert result.success is True
     assert len(result.data["xiaohongshu_tips"]) == 1
     assert result.data["xiaohongshu_tips"][0]["title"] == "Tokyo tips"
+    assert result.data["xiaohongshu_tips"][0]["collected_count"] == 100
 
 
 @pytest.mark.asyncio
