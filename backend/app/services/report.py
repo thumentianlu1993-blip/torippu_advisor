@@ -1,9 +1,14 @@
+import hashlib
 import json
 import logging
+from decimal import Decimal
 from typing import Any
 
-from app.models import Candidate, CandidateCategory, Project
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models import CandidateCategory, Project
 from app.services.llm import llm_client
+from app.services.provider_transport import budgeted_send
 
 logger = logging.getLogger(__name__)
 
@@ -11,9 +16,20 @@ logger = logging.getLogger(__name__)
 class ReportBuilder:
     """Build a structured research report from collected candidates."""
 
-    def __init__(self, project: Project, candidates: list[Candidate]):
+    def __init__(
+        self,
+        project: Project,
+        candidates: list[dict[str, Any]],
+        *,
+        db: AsyncSession,
+        run_id: int,
+        expected_version: int,
+    ):
         self.project = project
         self.candidates = candidates
+        self.db = db
+        self.run_id = run_id
+        self.expected_version = expected_version
 
     async def build(self) -> dict[str, Any]:
         """Run LLM-powered classification and summarization, then assemble sections."""
@@ -44,25 +60,25 @@ class ReportBuilder:
 
         candidate_texts = []
         for c in self.candidates:
-            raw_data = c.raw_data or {}
+            raw_data = c.get("raw_data") or {}
             chinese_tips = raw_data.get("chinese_tips") or []
             candidate_texts.append(
                 {
-                    "id": c.id,
-                    "name": c.name,
-                    "category": c.category.value,
-                    "subcategory": c.subcategory,
-                    "area": c.area,
-                    "rating": c.rating,
-                    "review_count": c.review_count,
-                    "price_level": c.price_level,
-                    "price_range": c.price_range,
-                    "opening_hours": c.opening_hours,
-                    "summary": c.summary,
-                    "chinese_focus_summary": c.chinese_focus_summary,
+                    "id": c["id"],
+                    "name": c["name"],
+                    "category": _enum_value(c["category"]),
+                    "subcategory": c.get("subcategory"),
+                    "area": c.get("area"),
+                    "rating": c.get("rating"),
+                    "review_count": c.get("review_count"),
+                    "price_level": c.get("price_level"),
+                    "price_range": c.get("price_range"),
+                    "opening_hours": c.get("opening_hours"),
+                    "summary": c.get("summary"),
+                    "chinese_focus_summary": c.get("chinese_focus_summary"),
                     "chinese_tips": chinese_tips[:3],
-                    "source": c.source,
-                    "source_url": c.source_url,
+                    "source": c.get("source"),
+                    "source_url": c.get("source_url"),
                 }
             )
 
@@ -75,8 +91,8 @@ class ReportBuilder:
         user_prompt = f"""
 Destination: {self.project.destination}
 Duration: {self.project.duration_days} days
-Preferences: {self.project.preferences or 'none'}
-Constraints: {self.project.constraints or 'none'}
+Preferences: {self.project.preferences or "none"}
+Constraints: {self.project.constraints or "none"}
 
 Candidates (ratings, review counts, price ranges, opening hours, and Chinese tips are included):
 {json.dumps(candidate_texts, ensure_ascii=False, indent=2)}
@@ -106,7 +122,18 @@ opening_hours, and any Chinese traveler tips. Mention practical advice for
 Chinese tourists when available.
 """
         try:
-            return await llm_client.generate_json(system_prompt, user_prompt)
+            prompt_hash = hashlib.sha256(user_prompt.encode()).hexdigest()
+            return await budgeted_send(
+                lambda: llm_client.generate_json(system_prompt, user_prompt),
+                db=self.db,
+                project_id=self.project.id,
+                run_id=self.run_id,
+                provider="siliconflow_report",
+                idempotency_key=(
+                    f"{self.run_id}:siliconflow_report:{self.expected_version}:{prompt_hash}"
+                ),
+                estimated_cost_usd=Decimal("0.05"),
+            )
         except Exception:  # noqa: BLE001
             logger.exception("LLM classification failed")
             return self._fallback_classification()
@@ -115,9 +142,14 @@ Chinese tourists when available.
         """When LLM is unavailable or there are no candidates, return empty structure."""
         by_category: dict[str, list[dict[str, Any]]] = {}
         for c in self.candidates:
-            key = c.category.value
+            key = _enum_value(c["category"])
             by_category.setdefault(key, []).append(
-                {"id": c.id, "name": c.name, "area": c.area, "tier": c.tier.value}
+                {
+                    "id": c["id"],
+                    "name": c["name"],
+                    "area": c.get("area"),
+                    "tier": _enum_value(c["tier"]),
+                }
             )
         return {
             "core": by_category.get(CandidateCategory.core.value, []),
@@ -126,9 +158,7 @@ Chinese tourists when available.
                 "cultural": by_category.get(CandidateCategory.cultural.value, []),
                 "entertainment": by_category.get(CandidateCategory.entertainment.value, []),
                 "shopping": by_category.get(CandidateCategory.shopping.value, []),
-                "local_specialty": by_category.get(
-                    CandidateCategory.local_specialty.value, []
-                ),
+                "local_specialty": by_category.get(CandidateCategory.local_specialty.value, []),
                 "personal_preference": by_category.get(
                     CandidateCategory.personal_preference.value, []
                 ),
@@ -144,3 +174,7 @@ Chinese tourists when available.
             "tips": {"pre_trip": [], "during_trip": []},
             "routes": [],
         }
+
+
+def _enum_value(value: Any) -> Any:
+    return getattr(value, "value", value)

@@ -1,0 +1,102 @@
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: travel
+      POSTGRES_PASSWORD: travel
+      POSTGRES_DB: travel_test_ci
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travel -d travel_test_ci"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks: [test-internal]
+  redis-test:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks: [test-internal]
+
+  mock-provider:
+    image: python@sha256:baf89808ec37adeaab83cec287adb4a2afa4a11c1d51e961c7ec737877e61af6
+    command: python /app/mock-provider.py
+    volumes:
+      - ./scripts/ci/mock-provider.py:/app/mock-provider.py:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz').read()"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    networks: [test-internal]
+
+  backend-test:
+    profiles: [app]
+    build: {context: ./backend, dockerfile: Dockerfile}
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log"
+    environment:
+      DATABASE_URL: postgresql+psycopg://travel:travel@postgres-test:5432/travel_test_ci
+      REDIS_URL: redis://redis-test:6379/0
+      CELERY_BROKER_URL: redis://redis-test:6379/0
+      CELERY_RESULT_BACKEND: redis://redis-test:6379/0
+      RATE_LIMIT_REDIS_URL: redis://redis-test:6379/1
+      CORS_ORIGINS: https://localhost:3443
+      DENY_EXTERNAL_NETWORK: "1"
+      FIRECRAWL_BASE_URL: http://mock-provider:8080
+      XIAOHONGSHU_API_BASE_URL: http://mock-provider:8080
+      XIAOHONGSHU_API_ENDPOINT: mock
+      DIANPING_API_BASE_URL: http://mock-provider:8080
+      CTRIP_API_BASE_URL: http://mock-provider:8080
+    depends_on:
+      postgres-test: {condition: service_healthy}
+      redis-test: {condition: service_healthy}
+      mock-provider: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz').read()"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [test-internal]
+
+  frontend-test:
+    profiles: [app]
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        NEXT_PUBLIC_API_URL: same-origin
+    environment:
+      HOSTNAME: 0.0.0.0
+    depends_on:
+      backend-test: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [test-internal]
+
+  test-gateway:
+    profiles: [app]
+    image: caddy:2-alpine
+    volumes:
+      - ./scripts/ci/Caddyfile.test:/etc/caddy/Caddyfile:ro
+    depends_on:
+      backend-test: {condition: service_healthy}
+      frontend-test: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:3443:443"
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-qO-", "https://localhost/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [test-internal, test-edge]
+
+networks:
+  test-internal:
+    internal: true
+  test-edge:

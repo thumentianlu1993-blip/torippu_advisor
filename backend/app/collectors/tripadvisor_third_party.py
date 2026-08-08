@@ -26,9 +26,7 @@ class TripadvisorThirdPartyCollector(BaseCollector):
         self.timeout = 30.0
 
     async def is_available(self) -> bool:
-        return bool(self.stayapi_key) or bool(
-            self.dataforseo_login and self.dataforseo_password
-        )
+        return bool(self.stayapi_key) or bool(self.dataforseo_login and self.dataforseo_password)
 
     async def collect_broad(
         self, destination: str, project_data: dict[str, Any]

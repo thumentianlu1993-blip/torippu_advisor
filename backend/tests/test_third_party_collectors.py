@@ -117,9 +117,7 @@ async def test_xiaohongshu_collect_detail_enriches(xhs_collector):
 @pytest.mark.asyncio
 async def test_xiaohongshu_collect_detail_returns_error_on_failure(xhs_collector):
     mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.__aenter__.return_value.get = AsyncMock(
-        side_effect=httpx.HTTPError("boom")
-    )
+    mock_client.__aenter__.return_value.get = AsyncMock(side_effect=httpx.HTTPError("boom"))
     mock_client.__aexit__.return_value = False
 
     with patch("app.collectors.xiaohongshu.httpx.AsyncClient", return_value=mock_client):
@@ -160,9 +158,7 @@ def tripadvisor_stayapi_collector():
 
 @pytest.fixture
 def tripadvisor_disabled():
-    with patch(
-        "app.collectors.tripadvisor_third_party.settings", TripadvisorSettingsDisabled()
-    ):
+    with patch("app.collectors.tripadvisor_third_party.settings", TripadvisorSettingsDisabled()):
         yield TripadvisorThirdPartyCollector()
 
 
@@ -189,9 +185,7 @@ async def test_tripadvisor_third_party_collect_broad_returns_empty(
 async def test_tripadvisor_third_party_stayapi_detail(tripadvisor_stayapi_collector):
     mock_response = AsyncMock(spec=httpx.Response)
     mock_response.json.return_value = {
-        "reviews": [
-            {"rating": 5, "text": "Amazing", "url": "http://ta/1"}
-        ],
+        "reviews": [{"rating": 5, "text": "Amazing", "url": "http://ta/1"}],
         "url": "http://ta/spot",
     }
     mock_response.raise_for_status = Mock()
@@ -293,9 +287,7 @@ async def test_dianping_unavailable_without_config(dianping_collector_disabled):
 async def test_dianping_collect_detail_enriches(dianping_collector):
     mock_response = AsyncMock(spec=httpx.Response)
     mock_response.json.return_value = {
-        "data": [
-            {"title": "Great ramen", "review": "Delicious", "url": "http://dp/1"}
-        ]
+        "data": [{"title": "Great ramen", "review": "Delicious", "url": "http://dp/1"}]
     }
     mock_response.raise_for_status = Mock()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -317,9 +309,7 @@ async def test_dianping_collect_detail_returns_candidate_when_unavailable(
     dianping_collector_disabled,
 ):
     candidate = {"name": "Ramen Shop"}
-    result = await dianping_collector_disabled.collect_detail(
-        candidate, {"destination": "Tokyo"}
-    )
+    result = await dianping_collector_disabled.collect_detail(candidate, {"destination": "Tokyo"})
     assert result.success is True
     assert result.data == candidate
 
@@ -363,9 +353,7 @@ async def test_ctrip_unavailable_without_config(ctrip_collector_disabled):
 async def test_ctrip_collect_broad_returns_destination_tips(ctrip_collector):
     mock_response = AsyncMock(spec=httpx.Response)
     mock_response.json.return_value = {
-        "guides": [
-            {"title": "Tokyo guide", "content": "Visit Shibuya", "url": "http://ct/1"}
-        ]
+        "guides": [{"title": "Tokyo guide", "content": "Visit Shibuya", "url": "http://ct/1"}]
     }
     mock_response.raise_for_status = Mock()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
@@ -385,9 +373,7 @@ async def test_ctrip_collect_broad_returns_destination_tips(ctrip_collector):
 async def test_ctrip_collect_detail_enriches(ctrip_collector):
     mock_response = AsyncMock(spec=httpx.Response)
     mock_response.json.return_value = {
-        "data": [
-            {"title": "Shibuya guide", "content": "Crossing tips", "url": "http://ct/2"}
-        ]
+        "data": [{"title": "Shibuya guide", "content": "Crossing tips", "url": "http://ct/2"}]
     }
     mock_response.raise_for_status = Mock()
     mock_client = AsyncMock(spec=httpx.AsyncClient)

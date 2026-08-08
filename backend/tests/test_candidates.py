@@ -1,133 +1,111 @@
 import pytest
+from sqlalchemy import select
+
+from app.auth import secret_hash
+from app.models import Project, TaskOutbox
 
 
-def _creator_headers(project: dict) -> dict:
-    return {"X-Creator-Token": project["creator_token"]}
+async def _project(client, destination: str) -> dict:
+    response = await client.post(
+        "/api/projects",
+        json={"destination": destination, "duration_days": 2, "departure": "A"},
+    )
+    assert response.status_code == 201
+    return response.json()
 
 
 @pytest.mark.asyncio
-async def test_candidate_crud(client):
-    # Create project
-    project_resp = await client.post(
-        "/api/projects",
-        json={"destination": "CRUD City", "duration_days": 2, "departure": "A"},
-    )
-    project = project_resp.json()
-
-    # Add candidate
-    add_resp = await client.post(
-        f"/api/projects/{project['id']}/candidates",
+async def test_candidate_crud_is_share_scoped_and_cookie_authorized(client):
+    project = await _project(client, "CRUD City")
+    root = f"/api/projects/by-token/{project['share_token']}"
+    add = await client.post(
+        f"{root}/creator/candidates",
         json={"name": "Test Restaurant", "category": "food", "tier": "optional"},
-        headers=_creator_headers(project),
     )
-    assert add_resp.status_code == 201
-    candidate = add_resp.json()
-    assert candidate["name"] == "Test Restaurant"
-    assert candidate["tier"] == "optional"
-
-    # List candidates
-    list_resp = await client.get(f"/api/projects/{project['id']}/candidates")
-    assert list_resp.status_code == 200
-    assert len(list_resp.json()) == 1
-
-    # Update candidate tier
-    patch_resp = await client.patch(
-        f"/api/projects/{project['id']}/candidates/{candidate['id']}",
-        json={"tier": "must_go"},
-        headers=_creator_headers(project),
+    assert add.status_code == 201
+    candidate = add.json()
+    assert (await client.get(f"{root}/candidates")).json()[0]["name"] == "Test Restaurant"
+    patched = await client.patch(
+        f"{root}/creator/candidates/{candidate['id']}", json={"tier": "must_go"}
     )
-    assert patch_resp.status_code == 200
-    assert patch_resp.json()["tier"] == "must_go"
-
-    # Delete candidate
-    del_resp = await client.delete(
-        f"/api/projects/{project['id']}/candidates/{candidate['id']}",
-        headers=_creator_headers(project),
+    assert patched.json()["tier"] == "must_go"
+    deleted = await client.request(
+        "DELETE", f"{root}/creator/candidates/{candidate['id']}", json={}
     )
-    assert del_resp.status_code == 204
-
-    list_resp = await client.get(f"/api/projects/{project['id']}/candidates")
-    assert len(list_resp.json()) == 0
+    assert deleted.status_code == 204
 
 
 @pytest.mark.asyncio
-async def test_candidate_mutations_require_creator_token(client):
-    project_resp = await client.post(
-        "/api/projects",
-        json={"destination": "Guard City", "duration_days": 2, "departure": "A"},
-    )
-    project = project_resp.json()
-    candidate_resp = await client.post(
-        f"/api/projects/{project['id']}/candidates",
-        json={"name": "Guarded Spot", "category": "niche", "tier": "optional"},
-        headers=_creator_headers(project),
-    )
-    candidate = candidate_resp.json()
-
-    wrong = {"X-Creator-Token": "not-the-creator-token"}
-    no_header: dict = {}
-
-    add_resp = await client.post(
-        f"/api/projects/{project['id']}/candidates",
-        json={"name": "Intruder", "category": "food", "tier": "optional"},
-    )
-    assert add_resp.status_code == 403
-
-    patch_resp = await client.patch(
-        f"/api/projects/{project['id']}/candidates/{candidate['id']}",
-        json={"tier": "discarded"},
-        headers=wrong,
-    )
-    assert patch_resp.status_code == 403
-
-    del_resp = await client.delete(
-        f"/api/projects/{project['id']}/candidates/{candidate['id']}",
-        headers=no_header,
-    )
-    assert del_resp.status_code == 403
-
-    recollect_resp = await client.post(
-        f"/api/projects/by-token/{project['token']}/recollect"
-    )
-    assert recollect_resp.status_code == 403
-
-    # The candidate survives untouched.
-    list_resp = await client.get(f"/api/projects/{project['id']}/candidates")
-    assert [c["name"] for c in list_resp.json()] == ["Guarded Spot"]
+async def test_cross_project_candidate_access_is_not_found(client):
+    first = await _project(client, "First")
+    first_root = f"/api/projects/by-token/{first['share_token']}"
+    candidate = (
+        await client.post(
+            f"{first_root}/creator/candidates",
+            json={"name": "Guarded Spot", "category": "niche", "tier": "optional"},
+        )
+    ).json()
+    second = await _project(client, "Second")
+    second_root = f"/api/projects/by-token/{second['share_token']}"
+    assert (
+        await client.post(
+            f"{second_root}/candidates/{candidate['id']}/votes", json={"vote_type": "like"}
+        )
+    ).status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_vote_flow(client):
-    project_resp = await client.post(
-        "/api/projects",
-        json={"destination": "Vote City", "duration_days": 2, "departure": "A"},
-    )
-    project = project_resp.json()
+async def test_vote_cookie_upserts_and_hidden_counts(client):
+    project = await _project(client, "Vote City")
+    root = f"/api/projects/by-token/{project['share_token']}"
+    candidate = (
+        await client.post(
+            f"{root}/creator/candidates",
+            json={"name": "Vote Spot", "category": "cultural", "tier": "optional"},
+        )
+    ).json()
+    vote_url = f"{root}/candidates/{candidate['id']}/votes"
+    assert (await client.post(vote_url, json={"vote_type": "like"})).status_code == 201
+    assert (await client.post(vote_url, json={"vote_type": "dislike"})).status_code == 201
+    listed = (await client.get(f"{root}/candidates")).json()[0]
+    assert listed["user_vote"] == "dislike"
+    assert listed["like_count"] is None and listed["dislike_count"] is None
+    await client.patch(f"{root}/creator/votes-visibility", json={"revealed": True})
+    assert (await client.get(f"{root}/candidates")).json()[0]["dislike_count"] == 1
 
-    candidate_resp = await client.post(
-        f"/api/projects/{project['id']}/candidates",
-        json={"name": "Vote Spot", "category": "cultural", "tier": "optional"},
-        headers=_creator_headers(project),
-    )
-    candidate = candidate_resp.json()
 
-    vote_resp = await client.post(
-        f"/api/candidates/{candidate['id']}/votes",
-        json={"vote_type": "like"},
-        headers={"x-session-id": "test-session"},
+@pytest.mark.asyncio
+async def test_candidate_versions_queue_deduplicated_report_rebuilds(client, db_session):
+    created = await _project(client, "Report Version City")
+    root = f"/api/projects/by-token/{created['share_token']}"
+    candidate = (
+        await client.post(
+            f"{root}/creator/candidates",
+            json={"name": "Versioned Spot", "category": "cultural", "tier": "optional"},
+        )
+    ).json()
+    await client.patch(
+        f"{root}/creator/candidates/{candidate['id']}",
+        json={"version": candidate["version"], "summary": "Updated"},
     )
-    assert vote_resp.status_code == 201
-    assert vote_resp.json()["vote_type"] == "like"
 
-    # Re-voting from the same session updates instead of duplicating.
-    revote_resp = await client.post(
-        f"/api/candidates/{candidate['id']}/votes",
-        json={"vote_type": "dislike"},
-        headers={"x-session-id": "test-session"},
+    project = await db_session.scalar(
+        select(Project).where(Project.share_token_hash == secret_hash(created["share_token"]))
     )
-    assert revote_resp.status_code == 201
-
-    list_resp = await client.get(f"/api/projects/{project['id']}/candidates")
-    data = list_resp.json()
-    assert data[0]["like_count"] == 0
-    assert data[0]["dislike_count"] == 1
+    report_intents = list(
+        (
+            await db_session.execute(
+                select(TaskOutbox)
+                .where(
+                    TaskOutbox.project_id == project.id,
+                    TaskOutbox.task_name == "app.tasks.report.generate_report",
+                )
+                .order_by(TaskOutbox.id)
+            )
+        ).scalars()
+    )
+    assert [row.dedupe_key for row in report_intents] == [
+        f"report:{project.id}:2",
+        f"report:{project.id}:3",
+    ]
+    assert [row.payload["args"][1] for row in report_intents] == [2, 3]

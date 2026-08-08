@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import ProjectForm from "./components/ProjectForm";
+import RecoveryKeyPrompt from "./components/RecoveryKeyPrompt";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +23,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (project) {
-      setShareUrl(`${window.location.origin}/p/${project.token}?creator_token=${project.creator_token}`);
+      setShareUrl(`${window.location.origin}/p/${project.share_token}`);
     }
   }, [project]);
 
@@ -40,7 +41,7 @@ export default function HomePage() {
 
   const viewReport = () => {
     if (!project) return;
-    router.push(`/p/${project.token}?creator_token=${project.creator_token}`);
+    router.push(`/p/${project.share_token}`);
   };
 
   return (
@@ -75,6 +76,7 @@ export default function HomePage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <RecoveryKeyPrompt recoveryKey={project.recovery_key} />
               <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <MapPin className="size-4 text-terracotta-600" />

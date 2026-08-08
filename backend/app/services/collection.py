@@ -1,19 +1,31 @@
+import hashlib
+import json
 import logging
+from decimal import Decimal
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.collectors import registry
 from app.collectors.base import CollectorResult
-from app.crud import create_candidate
 from app.models import (
+    Candidate,
     CandidateCategory,
+    CandidateSource,
     CollectionRun,
     CollectionStatus,
     Project,
     ProjectStatus,
+    SourceObservation,
+    TaskOutbox,
 )
+from app.services.candidate_lifecycle import record_observation
+from app.services.candidate_sources import ingest_candidate_source
+from app.services.provider_transport import BudgetExhaustedError, budgeted_send
 from app.services.review_insights import extract_review_insights
+from app.services.run_execution import heartbeat_run
 
 logger = logging.getLogger(__name__)
 
@@ -66,29 +78,13 @@ def _normalize_category(source: str, raw: dict[str, Any]) -> CandidateCategory:
         or "beach" in name
         or "garden" in name
         or any(
-            k in category_text
-            for k in ("park", "nature", "garden", "beach", "natural_features")
+            k in category_text for k in ("park", "nature", "garden", "beach", "natural_features")
         )
     ):
         return CandidateCategory.natural
-    if "mall" in name or any(
-        k in category_text for k in ("shopping", "market", "store", "mall")
-    ):
+    if "mall" in name or any(k in category_text for k in ("shopping", "market", "store", "mall")):
         return CandidateCategory.shopping
     return CandidateCategory.entertainment
-
-
-# Prioritized source order used when deciding which value to keep for overlapping fields.
-SOURCE_PRIORITY = [
-    "google_maps",
-    "foursquare",
-    "yelp",
-    "apify_google_maps",
-    "tripadvisor",
-    "xiaohongshu",
-    "chinese_travel_search",
-    "official_site",
-]
 
 
 _COMMON_SUFFIXES = [
@@ -130,35 +126,24 @@ def _geo_distance_m(a: dict[str, Any], b: dict[str, Any]) -> float | None:
     dlng = math.radians(lng_b - lng_a)
     hav = (
         math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat_a))
-        * math.cos(math.radians(lat_b))
-        * math.sin(dlng / 2) ** 2
+        + math.cos(math.radians(lat_a)) * math.cos(math.radians(lat_b)) * math.sin(dlng / 2) ** 2
     )
     return 6371000 * 2 * math.asin(math.sqrt(hav))
 
 
-def _source_rank(source: str | None) -> int:
-    """Lower rank means higher priority."""
-    if not source:
-        return len(SOURCE_PRIORITY)
-    try:
-        return SOURCE_PRIORITY.index(source)
-    except ValueError:
-        return len(SOURCE_PRIORITY)
+def _merge_candidates(collected: list[CollectorResult]) -> list[dict[str, Any]]:
+    """Deduplicate only inside a provider identity namespace.
 
-
-def _merge_candidates(
-    collected: list[CollectorResult],
-) -> list[dict[str, Any]]:
-    """Deduplicate and merge candidates from multiple sources."""
+    Cross-provider linking is intentionally deferred to CandidateSource matching,
+    where strong evidence, protection rules and audit proposals are available.
+    """
     destination_tips: list[dict[str, Any]] = []
-    by_key: dict[str, dict[str, Any]] = {}
-
+    by_identity: dict[str, dict[str, Any]] = {}
+    ordinal = 0
     for result in collected:
         if not result.success:
             continue
         for item in result.data or []:
-            # Skip destination-level Chinese tip containers; collect tips separately.
             if (
                 item.get("source") == "chinese_travel_search"
                 and item.get("lat") is None
@@ -166,88 +151,39 @@ def _merge_candidates(
             ):
                 destination_tips.extend(item.get("chinese_tips") or [])
                 continue
-
-            key = item.get("external_id") or _normalize_name(item.get("name"))
-            if not key:
+            provider = str(item.get("identity_provider") or item.get("source") or result.source)
+            external_id = item.get("external_id")
+            canonical_url = item.get("canonical_url") or item.get("source_url")
+            address = item.get("full_address") or item.get("address")
+            name = _normalize_name(item.get("name"))
+            if external_id:
+                evidence = f"external:{external_id}"
+            elif canonical_url:
+                evidence = f"url:{canonical_url}"
+            elif name and address:
+                evidence = f"fallback:{name}:{str(address).casefold().strip()}"
+            else:
+                ordinal += 1
+                evidence = f"provisional:{ordinal}"
+            key = f"{provider}:{evidence}"
+            existing = by_identity.get(key)
+            if not existing:
+                by_identity[key] = dict(item)
                 continue
+            for field, value in item.items():
+                if existing.get(field) in (None, "", [], {}) and value not in (None, "", [], {}):
+                    existing[field] = value
 
-            # Try to match by external ID first, then by geo proximity.
-            matched: dict[str, Any] | None = None
-            if item.get("external_id") and item["external_id"] in by_key:
-                matched = by_key[item["external_id"]]
-            else:
-                for existing in by_key.values():
-                    dist = _geo_distance_m(existing, item)
-                    if dist is not None and dist <= 100:
-                        matched = existing
-                        break
-
-            if matched:
-                # Prefer data from higher-priority sources.
-                for field in ["rating", "review_count", "lat", "lng", "address", "source_url"]:
-                    existing_val = matched.get(field)
-                    new_val = item.get(field)
-                    if new_val and not existing_val:
-                        matched[field] = new_val
-                    elif new_val and existing_val and field in ("rating", "review_count"):
-                        if _source_rank(item.get("source")) < _source_rank(matched.get("source")):
-                            matched[field] = new_val
-
-                # Photos: merge unique URLs, preferring richer sets.
-                existing_photos = matched.get("photos") or []
-                new_photos = item.get("photos") or []
-                if len(new_photos) > len(existing_photos):
-                    matched["photos"] = list(new_photos)
-                else:
-                    matched["photos"] = list(existing_photos)
-
-                # Opening hours: keep first non-empty value.
-                if item.get("opening_hours") and not matched.get("opening_hours"):
-                    matched["opening_hours"] = item["opening_hours"]
-
-                # Price: prefer non-null values.
-                if item.get("price_level") is not None and matched.get("price_level") is None:
-                    matched["price_level"] = item["price_level"]
-                if item.get("price_range") and not matched.get("price_range"):
-                    matched["price_range"] = item["price_range"]
-
-                # Chinese tips: concatenate unique tips by URL.
-                matched["chinese_tips"] = _merge_tips(
-                    matched.get("chinese_tips", []),
-                    item.get("chinese_tips", []),
-                )
-                matched["xiaohongshu_tips"] = _merge_tips(
-                    matched.get("xiaohongshu_tips", []),
-                    item.get("xiaohongshu_tips", []),
-                )
-
-                # Categories: union.
-                existing_categories = set(matched.get("categories", []))
-                existing_categories.update(item.get("categories", []))
-                matched["categories"] = list(existing_categories)
-
-                # Source list.
-                sources = {s.strip() for s in (matched.get("source") or "").split(",") if s.strip()}
-                if item.get("source"):
-                    sources.add(item["source"])
-                matched["source"] = ",".join(sorted(sources, key=_source_rank))
-            else:
-                by_key[key] = dict(item)
-
-    results = list(by_key.values())
-    # Distribute destination-level Chinese tips to all candidates.
+    results = list(by_identity.values())
     if destination_tips:
         for candidate in results:
             candidate["chinese_tips"] = _merge_tips(
-                candidate.get("chinese_tips", []),
-                destination_tips,
+                candidate.get("chinese_tips", []), destination_tips
             )
     return results
 
 
-def _merge_tips(
-    existing: list[dict[str, Any]], new: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _merge_tips(existing: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Merge tip lists, deduplicating by URL."""
     seen: set[str] = set()
     merged: list[dict[str, Any]] = []
@@ -264,12 +200,14 @@ def _merge_tips(
 async def run_collection_pipeline(
     db: AsyncSession,
     project: Project,
-    run: CollectionRun | None = None,
+    run: CollectionRun,
 ) -> dict[str, Any]:
     """Run broad search, detailed enrichment, persist candidates, and queue report generation."""
-    if run:
-        run.status = CollectionStatus.running
-        run.started_at = _utc_now()
+    run.status = CollectionStatus.running
+    run.started_at = _utc_now()
+    expected_lease_owner = run.lease_owner
+    if not expected_lease_owner:
+        raise RuntimeError("claimed_run_required")
     project.status = ProjectStatus.collecting
     await db.commit()
 
@@ -286,14 +224,34 @@ async def run_collection_pipeline(
     available = [c for c in registry.all_collectors() if await c.is_available()]
     source_statuses: dict[str, bool] = {}
     broad_results: list[CollectorResult] = []
+    budget_exhausted = False
 
     # Broad search across all available collectors.
     for collector in available:
-        result = await collector.collect_broad(project.destination, project_data)
+        if not await heartbeat_run(db, run, expected_lease_owner):
+            return {"status": "lease_lost"}
+        request_hash = hashlib.sha256(json.dumps(project_data, sort_keys=True).encode()).hexdigest()
+        try:
+            result = await budgeted_send(
+                lambda collector=collector: collector.collect_broad(
+                    project.destination, project_data
+                ),
+                db=db,
+                project_id=project.id,
+                run_id=run.id,
+                provider=collector.name,
+                expected_run_owner=expected_lease_owner,
+                idempotency_key=f"{run.id}:{collector.name}:broad:{request_hash}",
+                estimated_cost_usd=Decimal("0.01"),
+            )
+        except BudgetExhaustedError:
+            source_statuses[collector.name] = False
+            budget_exhausted = True
+            continue
         broad_results.append(result)
         source_statuses[collector.name] = result.success
         if not result.success:
-            logger.warning("Broad collection failed for %s: %s", collector.name, result.error)
+            logger.warning("provider_broad_failed provider=%s", collector.name)
 
     merged = _merge_candidates(broad_results)
 
@@ -306,26 +264,44 @@ async def run_collection_pipeline(
         detail = dict(raw)
         for collector in available:
             try:
-                result = await collector.collect_detail(detail, project_data)
+                if not await heartbeat_run(db, run, expected_lease_owner):
+                    return {"status": "lease_lost"}
+                request_hash = hashlib.sha256(
+                    json.dumps(
+                        {
+                            "external_id": detail.get("external_id"),
+                            "name": detail.get("name"),
+                            "lat": detail.get("lat"),
+                            "lng": detail.get("lng"),
+                        },
+                        sort_keys=True,
+                    ).encode()
+                ).hexdigest()
+                result = await budgeted_send(
+                    lambda collector=collector, detail=detail: collector.collect_detail(
+                        detail, project_data
+                    ),
+                    db=db,
+                    project_id=project.id,
+                    run_id=run.id,
+                    provider=collector.name,
+                    expected_run_owner=expected_lease_owner,
+                    idempotency_key=f"{run.id}:{collector.name}:detail:{request_hash}",
+                    estimated_cost_usd=Decimal("0.01"),
+                )
                 if result.success and result.data:
                     if isinstance(result.data, dict):
                         detail.update(result.data)
                     collector_success_counts[collector.name]["success"] += 1
                 else:
                     collector_success_counts[collector.name]["failed"] += 1
-                    logger.warning(
-                        "Detail enrichment failed for %s on candidate %s: %s",
-                        collector.name,
-                        raw.get("name"),
-                        result.error,
-                    )
+                    logger.warning("provider_detail_failed provider=%s", collector.name)
+            except BudgetExhaustedError:
+                budget_exhausted = True
+                collector_success_counts[collector.name]["failed"] += 1
             except Exception:  # noqa: BLE001
                 collector_success_counts[collector.name]["failed"] += 1
-                logger.exception(
-                    "Detail enrichment exception for %s on candidate %s",
-                    collector.name,
-                    raw.get("name"),
-                )
+                logger.warning("provider_detail_exception provider=%s", collector.name)
         enriched_candidates.append(detail)
 
     # Derive per-collector boolean status from success/failure counts.
@@ -338,45 +314,164 @@ async def run_collection_pipeline(
 
     # Extract pros/cons tags and review snippets from enriched raw data.
     for detail in enriched_candidates:
-        insights = await extract_review_insights(detail)
+        insights = await extract_review_insights(
+            detail,
+            db=db,
+            project_id=project.id,
+            run_id=run.id,
+            expected_run_owner=expected_lease_owner,
+        )
         detail["pros"] = insights.get("pros", [])
         detail["cons"] = insights.get("cons", [])
         detail["review_snippets"] = insights.get("review_snippets", [])
 
     # Persist candidates.
     persistence_errors = 0
+    data_changed = False
     for raw in enriched_candidates:
         try:
-            await create_candidate(
-                db,
-                project.id,
-                schemas_candidate(raw),
+            await db.refresh(project)
+            if not await heartbeat_run(db, run, expected_lease_owner):
+                await db.rollback()
+                return {"status": "lease_lost"}
+            if project.deleted_at or run.execution_fence_version != project.execution_fence_version:
+                await db.rollback()
+                return {"status": "revoked"}
+            candidate = await ingest_candidate_source(db, project.id, raw, schemas_candidate(raw))
+            data_changed = data_changed or bool(
+                getattr(candidate, "_collection_data_changed", False)
             )
         except Exception:  # noqa: BLE001
             persistence_errors += 1
-            logger.exception("Failed to persist candidate: %s", raw.get("name"))
+            logger.warning("candidate_persistence_failed")
 
     if persistence_errors:
         source_statuses["persistence"] = False
     else:
         source_statuses["persistence"] = source_statuses.get("persistence", True)
 
-    # Update run status.
-    if run:
-        run.status = (
-            CollectionStatus.success
-            if all(source_statuses.values())
-            else CollectionStatus.partial
+    # Only a complete, successful and non-budget-truncated provider result may
+    # advance source absence. Incomplete runs preserve the prior lifecycle.
+    broad_by_source = {item.source: item for item in broad_results}
+    for collector in available:
+        provider_result = broad_by_source.get(collector.name)
+        successful = bool(provider_result and provider_result.success)
+        complete = successful and source_statuses.get(collector.name, False)
+        budget_truncated = budget_exhausted
+        seen_external_ids = {
+            str(item.get("external_id"))
+            for item in (provider_result.data if provider_result else [])
+            if item.get("external_id")
+        }
+        sources = list(
+            (
+                await db.execute(
+                    select(CandidateSource).where(
+                        CandidateSource.project_id == project.id,
+                        CandidateSource.identity_provider == collector.name,
+                    )
+                )
+            ).scalars()
         )
-        run.completed_at = _utc_now()
-        run.source_statuses = source_statuses
+        for source in sources:
+            seen = bool(source.external_id and source.external_id in seen_external_ids)
+            lifecycle_changed = record_observation(
+                source,
+                at=_utc_now(),
+                seen=seen,
+                complete=complete,
+                successful=successful,
+                budget_truncated=budget_truncated,
+            )
+            data_changed = data_changed or lifecycle_changed
+            db.add(
+                SourceObservation(
+                    source_id=source.id,
+                    run_id=run.id,
+                    complete=complete,
+                    successful=successful,
+                    budget_truncated=budget_truncated,
+                    seen=seen,
+                )
+            )
+
+    automatic_candidates = list(
+        (
+            await db.execute(
+                select(Candidate).where(
+                    Candidate.project_id == project.id,
+                    Candidate.origin == "automatic",
+                )
+            )
+        ).scalars()
+    )
+    for candidate in automatic_candidates:
+        source_activity = list(
+            (
+                await db.execute(
+                    select(CandidateSource.active).where(
+                        CandidateSource.candidate_id == candidate.id
+                    )
+                )
+            ).scalars()
+        )
+        if source_activity:
+            next_active = any(source_activity)
+            data_changed = data_changed or candidate.active != next_active
+            candidate.active = next_active
+
+    # No collection result can become visible unless the original lease owner,
+    # project fence and non-deleted state all still match at the final commit.
+    locked_project = await db.scalar(
+        select(Project)
+        .where(Project.id == project.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    locked_run = await db.scalar(
+        select(CollectionRun)
+        .where(CollectionRun.id == run.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if (
+        not locked_project
+        or not locked_run
+        or locked_project.deleted_at
+        or locked_run.lease_owner != expected_lease_owner
+        or locked_run.execution_fence_version != locked_project.execution_fence_version
+    ):
+        await db.rollback()
+        return {"status": "revoked"}
+    project = locked_project
+    run = locked_run
+    if data_changed:
+        project.candidate_data_version += 1
+
+    # Update run status.
+    if budget_exhausted:
+        run.status = CollectionStatus.partial_budget_exhausted
+    else:
+        run.status = (
+            CollectionStatus.success if all(source_statuses.values()) else CollectionStatus.partial
+        )
+    run.completed_at = _utc_now()
+    run.source_statuses = source_statuses
     project.status = ProjectStatus.generating
+
+    # Persist dispatch intent in the same transaction as collection results.
+    await db.execute(
+        pg_insert(TaskOutbox)
+        .values(
+            project_id=project.id,
+            run_id=run.id,
+            task_name="app.tasks.report.generate_report",
+            dedupe_key=f"report:{project.id}:{project.candidate_data_version}",
+            payload={"args": [project.id, project.candidate_data_version]},
+        )
+        .on_conflict_do_nothing(index_elements=[TaskOutbox.dedupe_key])
+    )
     await db.commit()
-
-    # Queue report generation.
-    from app.celery_app import celery_app
-
-    celery_app.send_task("app.tasks.report.generate_report", args=[project.id])
 
     return {
         "project_id": project.id,

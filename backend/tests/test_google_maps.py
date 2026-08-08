@@ -42,17 +42,11 @@ async def test_broad_merges_and_dedupes_across_queries(collector):
     def handler(request: httpx.Request) -> httpx.Response:
         body = request.read().decode()
         if "景点" in body:
-            return httpx.Response(
-                200, json={"places": [_place("a", "甲"), _place("b", "乙")]}
-            )
-        return httpx.Response(
-            200, json={"places": [_place("b", "乙"), _place("c", "丙")]}
-        )
+            return httpx.Response(200, json={"places": [_place("a", "甲"), _place("b", "乙")]})
+        return httpx.Response(200, json={"places": [_place("b", "乙"), _place("c", "丙")]})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    with patch(
-        "app.collectors.google_maps.httpx.AsyncClient", return_value=client
-    ):
+    with patch("app.collectors.google_maps.httpx.AsyncClient", return_value=client):
         result = await collector.collect_broad("东京", {})
 
     assert result.success is True
@@ -66,9 +60,7 @@ async def test_broad_fails_when_all_queries_error(collector):
         return httpx.Response(400, json={"error": {"message": "bad key"}})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    with patch(
-        "app.collectors.google_maps.httpx.AsyncClient", return_value=client
-    ):
+    with patch("app.collectors.google_maps.httpx.AsyncClient", return_value=client):
         result = await collector.collect_broad("东京", {})
 
     assert result.success is False
@@ -81,9 +73,7 @@ async def test_broad_empty_results_still_success(collector):
         return httpx.Response(200, json={"places": []})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    with patch(
-        "app.collectors.google_maps.httpx.AsyncClient", return_value=client
-    ):
+    with patch("app.collectors.google_maps.httpx.AsyncClient", return_value=client):
         result = await collector.collect_broad("Nowhere", {})
 
     assert result.success is True
@@ -97,15 +87,11 @@ async def test_detail_circuit_breaker_opens_on_quota_error(collector):
     def handler(request: httpx.Request) -> httpx.Response:
         nonlocal calls
         calls += 1
-        return httpx.Response(
-            429, json={"error": {"status": "RESOURCE_EXHAUSTED"}}
-        )
+        return httpx.Response(429, json={"error": {"status": "RESOURCE_EXHAUSTED"}})
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     candidate = {"external_id": "place-1", "name": "浅草寺"}
-    with patch(
-        "app.collectors.google_maps.httpx.AsyncClient", return_value=client
-    ):
+    with patch("app.collectors.google_maps.httpx.AsyncClient", return_value=client):
         first = await collector.collect_detail(dict(candidate), {})
         second = await collector.collect_detail(dict(candidate), {})
 

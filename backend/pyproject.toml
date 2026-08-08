@@ -48,3 +48,6 @@ convention = "google"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "no_db: contract test that must not connect to a database",
+]

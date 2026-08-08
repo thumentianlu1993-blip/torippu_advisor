@@ -1,20 +1,37 @@
-"""Lightweight creator authorization for share-link projects.
+"""Hash-only project credentials and cookie authorization."""
 
-Projects are created without accounts. The creator receives an unguessable
-``creator_token`` at creation time; mutating endpoints require it via the
-``X-Creator-Token`` header. Read-only endpoints stay public under the share
-token by design (travel companions vote without registering).
-"""
+import hashlib
+import hmac
+import secrets
+from datetime import datetime, timezone
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, Request, status
 
 from app.models import Project
 
+CREATOR_COOKIE = "travel_creator"
+VOTER_COOKIE = "travel_voter"
 
-def require_creator(project: Project, x_creator_token: str | None) -> None:
-    """Raise 403 unless the provided token matches the project's creator token."""
-    if not x_creator_token or x_creator_token != str(project.creator_token):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Valid creator token required",
-        )
+
+def new_secret() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def secret_hash(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def secret_matches(value: str | None, expected: str | None) -> bool:
+    return bool(value and expected) and hmac.compare_digest(secret_hash(value), expected)
+
+
+def require_creator(project: Project, request: Request) -> None:
+    if project.ownership_state != "claimed":
+        raise HTTPException(status_code=403, detail="creator_recovery_required")
+    if (
+        project.creator_credential_expires_at
+        and project.creator_credential_expires_at <= datetime.now(timezone.utc)
+    ):
+        raise HTTPException(status_code=403, detail="creator_recovery_required")
+    if not secret_matches(request.cookies.get(CREATOR_COOKIE), project.creator_credential_hash):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="creator_required")

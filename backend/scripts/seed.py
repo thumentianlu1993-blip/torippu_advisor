@@ -1,4 +1,5 @@
 """Seed an example destination for manual testing."""
+
 import asyncio
 
 from app.database import AsyncSessionLocal

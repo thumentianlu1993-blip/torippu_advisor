@@ -1,8 +1,13 @@
+import hashlib
 import json
 import logging
+from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.services.llm import llm_client
+from app.services.provider_transport import budgeted_send
 
 logger = logging.getLogger(__name__)
 
@@ -136,6 +141,11 @@ def _fallback_insights(texts: list[str]) -> dict[str, Any]:
 
 async def extract_review_insights(
     raw_data: dict[str, Any] | None,
+    *,
+    db: AsyncSession | None = None,
+    project_id: int | None = None,
+    run_id: int | None = None,
+    expected_run_owner: str | None = None,
 ) -> dict[str, Any]:
     """Extract pros/cons tags and review snippets from raw collector data.
 
@@ -164,7 +174,7 @@ async def extract_review_insights(
     unique_snippets.sort(key=lambda x: len(x.get("text", "")), reverse=True)
     top_snippets = unique_snippets[:6]
 
-    if not llm_client.api_key:
+    if not llm_client.api_key or not db or not project_id or not run_id:
         insights = _fallback_insights(texts)
         insights["review_snippets"] = top_snippets
         return insights
@@ -173,12 +183,22 @@ async def extract_review_insights(
         "你是旅行攻略分析助手。请根据用户提供的景点/餐厅评价与攻略原文，"
         "提取：1) 最多 5 个优点标签；2) 最多 5 个缺点标签。"
         "标签要简短（2-6 个字），尽量来自真实评价中的高频观点。"
-        "输出严格 JSON：{\"pros\": [...], \"cons\": [...]}。"
+        '输出严格 JSON：{"pros": [...], "cons": [...]}。'
     )
     user_prompt = f"评价与攻略内容：\n{json.dumps(texts[:10], ensure_ascii=False, indent=2)}"
 
     try:
-        result = await llm_client.generate_json(system_prompt, user_prompt)
+        prompt_hash = hashlib.sha256(user_prompt.encode()).hexdigest()
+        result = await budgeted_send(
+            lambda: llm_client.generate_json(system_prompt, user_prompt),
+            db=db,
+            project_id=project_id,
+            run_id=run_id,
+            provider="siliconflow_review",
+            idempotency_key=f"{run_id}:siliconflow_review:{prompt_hash}",
+            estimated_cost_usd=Decimal("0.02"),
+            expected_run_owner=expected_run_owner,
+        )
         pros = [str(p) for p in result.get("pros", []) if p][:5]
         cons = [str(c) for c in result.get("cons", []) if c][:5]
         return {

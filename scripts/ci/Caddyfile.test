@@ -1,0 +1,23 @@
+{
+  auto_https disable_redirects
+}
+
+https://localhost {
+  tls internal
+
+  handle /api/* {
+    reverse_proxy backend-test:8000
+  }
+
+  handle /healthz {
+    reverse_proxy backend-test:8000
+  }
+
+  handle {
+    reverse_proxy frontend-test:3000
+  }
+
+  log {
+    output discard
+  }
+}

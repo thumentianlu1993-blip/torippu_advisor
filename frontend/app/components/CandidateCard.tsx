@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -33,6 +35,8 @@ import {
   Trash2,
   MessageSquareText,
   ExternalLink,
+  Pencil,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -103,28 +107,37 @@ function ReviewSheet({ snippets }: { snippets: any[] }) {
 
 export default function CandidateCard({
   candidate,
-  projectId,
+  token,
   isCreator,
-  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidate: any;
-  projectId: number;
+  token: string;
   isCreator: boolean;
-  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
   const [userVote, setUserVote] = useState(candidate.user_vote || null);
   const [expanded, setExpanded] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [history, setHistory] = useState<any[]>([]);
+  const [edit, setEdit] = useState({
+    name: candidate.name || "",
+    category: candidate.category || "",
+    area: candidate.area || "",
+    source_url: candidate.source_url || "",
+    notes: candidate.notes || "",
+    tier: candidate.tier || "optional",
+    summary: candidate.summary || "",
+  });
 
   const handleVote = async (voteType: string) => {
     if (busy) return;
     setBusy(true);
     try {
-      await api.vote(candidate.id, voteType);
+      await api.vote(token, candidate.id, voteType);
       setUserVote(voteType);
       onChange();
       toast.success("投票已保存");
@@ -139,7 +152,7 @@ export default function CandidateCard({
     if (busy || !value) return;
     setBusy(true);
     try {
-      await api.updateCandidate(projectId, candidate.id, { tier: value }, creatorToken || "");
+      await api.updateCandidate(token, candidate.id, { tier: value });
       onChange();
       toast.success("等级已更新");
     } catch (err: any) {
@@ -152,11 +165,33 @@ export default function CandidateCard({
   const handleDelete = async () => {
     if (!confirm("确定删除这个候选？")) return;
     try {
-      await api.deleteCandidate(projectId, candidate.id, creatorToken || "");
+      await api.deleteCandidate(token, candidate.id);
       onChange();
       toast.success("已删除");
     } catch (err: any) {
       toast.error(err.message || "删除失败");
+    }
+  };
+
+  const saveOverrides = async () => {
+    setBusy(true);
+    try {
+      await api.updateCandidate(token, candidate.id, { ...edit, version: candidate.version });
+      setEditing(false);
+      onChange();
+      toast.success("人工覆盖已保存");
+    } catch (err: any) {
+      toast.error(err.message || "保存失败");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadHistory = async () => {
+    try {
+      setHistory(await api.getCandidateHistory(token, candidate.id));
+    } catch (err: any) {
+      toast.error(err.message || "读取历史失败");
     }
   };
 
@@ -277,6 +312,38 @@ export default function CandidateCard({
               )}
               <ReviewSheet snippets={snippets} />
             </div>
+
+            {isCreator && (
+              <div className="mt-3 rounded-lg border bg-muted/20 p-3">
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setEditing((value) => !value)}>
+                    <Pencil className="mr-1 size-3.5" /> 编辑人工覆盖
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={loadHistory}>
+                    <History className="mr-1 size-3.5" /> 字段历史
+                  </Button>
+                </div>
+                {editing && (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {(["name", "category", "area", "source_url", "notes", "tier"] as const).map((field) => (
+                      <Input key={field} aria-label={`编辑 ${field}`} value={edit[field]} onChange={(event) => setEdit({ ...edit, [field]: event.target.value })} placeholder={field} />
+                    ))}
+                    <Textarea className="sm:col-span-2" aria-label="编辑 summary" value={edit.summary} onChange={(event) => setEdit({ ...edit, summary: event.target.value })} placeholder="summary" />
+                    <div className="sm:col-span-2"><Button size="sm" disabled={busy} onClick={saveOverrides}>保存</Button></div>
+                  </div>
+                )}
+                {history.length > 0 && (
+                  <div className="mt-3 space-y-2 text-xs">
+                    {history.slice(0, 10).map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-2 rounded border bg-background p-2">
+                        <span>{item.field_name}: {String(item.old_value ?? "（系统值）")} → {String(item.new_value ?? "（空）")}</span>
+                        <Button size="xs" variant="ghost" onClick={async () => { await api.restoreCandidateField(token, candidate.id, item.id, candidate.version); onChange(); }}>恢复旧值</Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="mt-auto flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
               {isCreator ? (

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams } from "next/navigation";
 import { api, type Project, type Report, type Candidate } from "@/lib/api";
 import ReportNav from "@/app/components/ReportNav";
 import CoreExperiencesSection from "@/app/components/report/CoreExperiencesSection";
@@ -17,6 +17,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { toast } from "sonner";
+import CoverageStatus from "@/app/components/CoverageStatus";
+import ManualCandidateEditor from "@/app/components/ManualCandidateEditor";
+import VoteVisibilityControl from "@/app/components/VoteVisibilityControl";
+import MergeReviewQueue from "@/app/components/MergeReviewQueue";
+import ProjectLifecycleControls from "@/app/components/ProjectLifecycleControls";
+import ProjectRecovery from "@/app/components/ProjectRecovery";
+import CreatorCoveragePanel from "@/app/components/CreatorCoveragePanel";
 import {
   MapPin,
   Calendar,
@@ -138,9 +145,8 @@ function ProjectHeader({
 export default function ReportPage() {
   const rawToken = useParams().token;
   const token = Array.isArray(rawToken) ? rawToken[0] : rawToken;
-  const searchParams = useSearchParams();
-  const creatorToken = searchParams.get("creator_token");
   const [isCreator, setIsCreator] = useState(false);
+  const [recoveryRequired, setRecoveryRequired] = useState(false);
 
   const [project, setProject] = useState<Project | null>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -158,15 +164,13 @@ export default function ReportPage() {
       setProject(proj);
       // Creator status is validated server-side; the public project
       // response intentionally no longer carries the creator token.
-      if (creatorToken) {
-        try {
-          const check = await api.creatorCheck(token, creatorToken);
-          setIsCreator(!!check.creator);
-        } catch {
-          setIsCreator(false);
-        }
-      } else {
+      try {
+        const check = await api.creatorCheck(token);
+        setIsCreator(!!check.creator);
+        setRecoveryRequired(!!check.recovery_required);
+      } catch {
         setIsCreator(false);
+        setRecoveryRequired(false);
       }
       const [rep, cands, stat] = await Promise.all([
         api.getReport(token),
@@ -182,10 +186,13 @@ export default function ReportPage() {
     } finally {
       setLoading(false);
     }
-  }, [token, creatorToken]);
+  }, [token]);
 
   useEffect(() => {
     if (!token || Array.isArray(token)) return;
+    if (window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     loadData();
   }, [token, loadData]);
 
@@ -196,7 +203,7 @@ export default function ReportPage() {
 
     let es: EventSource | null = null;
     try {
-      es = api.streamReport(project.id);
+      es = api.streamReport(token);
       es.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -219,7 +226,7 @@ export default function ReportPage() {
     return () => {
       if (es) es.close();
     };
-  }, [project, report?.status, loadData]);
+  }, [project, report?.status, loadData, token]);
 
   const handleExport = async () => {
     if (!token || Array.isArray(token)) return;
@@ -242,7 +249,7 @@ export default function ReportPage() {
     if (!token || Array.isArray(token)) return;
     setRecollecting(true);
     try {
-      await api.recollect(token, creatorToken || "");
+      await api.recollect(token);
       setStatus((prev: any) => ({ ...prev, status: "collecting" }));
       toast.success("已开始重新采集");
       loadData();
@@ -263,6 +270,7 @@ export default function ReportPage() {
             <h2 className="font-heading text-lg font-semibold">无法加载报告</h2>
             <p className="mt-1 text-sm text-muted-foreground">{error}</p>
             <Button onClick={loadData} className="mt-4">重试</Button>
+            {token && !Array.isArray(token) && <ProjectRecovery token={token} />}
           </CardContent>
         </Card>
       </div>
@@ -284,6 +292,27 @@ export default function ReportPage() {
             onExport={handleExport}
             recollecting={recollecting}
           />
+          <CoverageStatus coverage={status?.coverage || "stale"} updatedAt={status?.updated_at} missing={status?.missing_categories || []} />
+          {isCreator && (
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <ManualCandidateEditor token={token} onChange={loadData} />
+              <VoteVisibilityControl token={token} revealed={project.votes_revealed} onChange={loadData} />
+              <MergeReviewQueue token={token} />
+              <ProjectLifecycleControls token={token} />
+              <CreatorCoveragePanel token={token} />
+            </div>
+          )}
+          {!isCreator && recoveryRequired && (
+            <Card className="mt-4">
+              <CardContent className="py-5">
+                <p className="font-medium">创建者凭证需要恢复</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  当前浏览器没有有效的创建者 Cookie。输入离线恢复密钥即可重新签发。
+                </p>
+                <ProjectRecovery token={token} />
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         <ReportNav active={activeSection} onSelect={setActiveSection} />
@@ -293,9 +322,8 @@ export default function ReportPage() {
           {activeSection === "important_experiences" && (
             <ImportantExperiencesSection
               candidates={candidates}
-              projectId={project.id}
+              token={token}
               isCreator={isCreator}
-              creatorToken={creatorToken}
               votesRevealed={project.votes_revealed}
               onChange={loadData}
             />

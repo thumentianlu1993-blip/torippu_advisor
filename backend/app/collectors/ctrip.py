@@ -123,9 +123,7 @@ class CtripCollector(BaseCollector):
         return []
 
 
-def _merge_tips(
-    existing: list[dict[str, Any]], new: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _merge_tips(existing: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     merged: list[dict[str, Any]] = []
     for tip in existing + new:

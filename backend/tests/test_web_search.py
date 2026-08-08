@@ -88,14 +88,10 @@ async def test_collect_detail_enriches_candidate(collector_with_key):
             {"title": f"{platform} tip", "url": f"http://{platform}", "snippet": "text"}
         ]
     )
-    collector_with_key.extractor.extract = AsyncMock(
-        return_value=None
-    )
+    collector_with_key.extractor.extract = AsyncMock(return_value=None)
 
     candidate = {"name": "Shibuya Crossing", "external_id": "x"}
-    result = await collector_with_key.collect_detail(
-        candidate, {"destination": "Tokyo"}
-    )
+    result = await collector_with_key.collect_detail(candidate, {"destination": "Tokyo"})
 
     assert result.success is True
     data = result.data
@@ -119,9 +115,7 @@ async def test_collect_detail_logs_error_on_exception(collector_with_key):
     )
 
     candidate = {"name": "Shibuya Crossing", "external_id": "x"}
-    result = await collector_with_key.collect_detail(
-        candidate, {"destination": "Tokyo"}
-    )
+    result = await collector_with_key.collect_detail(candidate, {"destination": "Tokyo"})
 
     assert result.success is False
     assert "network error" in result.error

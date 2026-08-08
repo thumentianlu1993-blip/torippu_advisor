@@ -8,6 +8,9 @@ x-backend-env: &backend-env
   - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
   - LOG_LEVEL=${LOG_LEVEL:-INFO}
   - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+  - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS}
+  - RATE_LIMIT_REDIS_URL=${RATE_LIMIT_REDIS_URL:-redis://redis:6379/1}
+  - DENY_EXTERNAL_NETWORK=${DENY_EXTERNAL_NETWORK:-false}
   # LLM
   - SILICONFLOW_API_KEY=${SILICONFLOW_API_KEY:-}
   # Search + content extraction
@@ -70,7 +73,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log"
     # Exposed on localhost only; the host Nginx proxies travel.umafans.run here.
     ports:
       - "127.0.0.1:8000:8000"

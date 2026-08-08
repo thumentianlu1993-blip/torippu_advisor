@@ -53,9 +53,7 @@ class YelpCollector(BaseCollector):
                             "image_url": image_url,
                             "photos": [image_url] if image_url else [],
                             "source_url": business.get("url"),
-                            "categories": [
-                                c.get("title") for c in business.get("categories", [])
-                            ],
+                            "categories": [c.get("title") for c in business.get("categories", [])],
                             "source": self.name,
                         }
                     )
@@ -110,10 +108,8 @@ class YelpCollector(BaseCollector):
                     "lat": coords.get("latitude") or candidate.get("lat"),
                     "lng": coords.get("longitude") or candidate.get("lng"),
                     "rating": business.get("rating") or candidate.get("rating"),
-                    "review_count": business.get("review_count")
-                    or candidate.get("review_count"),
-                    "price_level": len(business.get("price", ""))
-                    or candidate.get("price_level"),
+                    "review_count": business.get("review_count") or candidate.get("review_count"),
+                    "price_level": len(business.get("price", "")) or candidate.get("price_level"),
                     "image_url": business.get("image_url") or candidate.get("image_url"),
                     "photos": (business.get("photos", [])[:5] or candidate.get("photos", [])),
                     "source_url": business.get("url") or candidate.get("source_url"),

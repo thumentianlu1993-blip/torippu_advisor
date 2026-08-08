@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import Any, Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -23,8 +22,6 @@ class ProjectRead(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    token: UUID
     destination: str
     duration_days: int
     travel_time: str | None
@@ -40,21 +37,20 @@ class ProjectRead(BaseModel):
 
 
 class ProjectCreated(ProjectRead):
-    """Returned only by POST /api/projects — includes the creator credential.
+    """Creation response: public share token plus a one-time recovery key."""
 
-    The creator token must never appear in public (by-token) responses.
-    """
-
-    creator_token: UUID
+    share_token: str
+    recovery_key: str
 
 
 class ProjectStatusRead(BaseModel):
-    project_id: int
     status: str
     report_status: str | None
     report_progress: int
     collection_status: str | None
     updated_at: datetime | None
+    coverage: Literal["complete", "partial", "stale"] = "stale"
+    missing_categories: list[str] = Field(default_factory=list)
 
 
 class CandidateCreate(BaseModel):
@@ -73,6 +69,7 @@ class CandidateCreate(BaseModel):
     source: str = "manual"
     source_url: str | None = None
     summary: str | None = None
+    notes: str | None = None
     photos: list[Any] | None = None
     raw_data: dict[str, Any] | None = None
     chinese_focus_summary: str | None = None
@@ -96,13 +93,14 @@ class CandidateCreate(BaseModel):
 
 
 class CandidateUpdate(BaseModel):
+    version: int | None = Field(default=None, ge=1)
     tier: str | None = None
     name: str | None = Field(default=None, max_length=500)
+    category: str | None = None
     area: str | None = None
+    source_url: str | None = None
+    notes: str | None = None
     summary: str | None = None
-    pros: list[str] | None = None
-    cons: list[str] | None = None
-    review_snippets: list[dict[str, Any]] | None = None
 
     @field_validator("tier", mode="before")
     @classmethod
@@ -113,12 +111,19 @@ class CandidateUpdate(BaseModel):
             raise ValueError(f"invalid tier: {value}")
         return value
 
+    @field_validator("category", mode="before")
+    @classmethod
+    def _validate_category(cls, value: str | None) -> str | None:
+        if value is not None and value not in CandidateCategory._value2member_map_:
+            raise ValueError(f"invalid category: {value}")
+        return value
+
 
 class CandidateRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    project_id: int
+    version: int
     external_id: str | None
     name: str
     category: str
@@ -136,6 +141,7 @@ class CandidateRead(BaseModel):
     source: str
     source_url: str | None
     summary: str | None
+    notes: str | None
     positive_summary: str | None
     negative_summary: str | None
     pitfalls_summary: str | None
@@ -143,9 +149,10 @@ class CandidateRead(BaseModel):
     pros: list[str]
     cons: list[str]
     review_snippets: list[dict[str, Any]]
-    like_count: int = 0
-    dislike_count: int = 0
-    neutral_count: int = 0
+    user_vote: str | None = None
+    like_count: int | None = None
+    dislike_count: int | None = None
+    neutral_count: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -157,9 +164,6 @@ class VoteCreate(BaseModel):
 class VoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    candidate_id: int
-    session_id: str
     vote_type: str
     created_at: datetime
 
@@ -168,7 +172,6 @@ class CollectionRunRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    project_id: int
     status: str
     source_statuses: dict[str, Any]
     error_log: str | None
