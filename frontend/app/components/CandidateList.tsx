@@ -56,16 +56,14 @@ function useDebounce(value: string, delay = 250) {
 
 export default function CandidateList({
   candidates,
-  projectId,
+  token,
   isCreator,
-  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidates: any[];
-  projectId: number;
+  token: string;
   isCreator: boolean;
-  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
@@ -305,9 +303,8 @@ export default function CandidateList({
             <CandidateCard
               key={c.id}
               candidate={c}
-              projectId={projectId}
+              token={token}
               isCreator={isCreator}
-              creatorToken={creatorToken}
               votesRevealed={votesRevealed}
               onChange={onChange}
             />

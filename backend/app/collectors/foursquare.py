@@ -43,8 +43,7 @@ class FoursquareCollector(BaseCollector):
                         {
                             "external_id": place.get("fsq_id"),
                             "name": place.get("name"),
-                            "address": location.get("formatted_address")
-                            or location.get("address"),
+                            "address": location.get("formatted_address") or location.get("address"),
                             "lat": geo.get("latitude"),
                             "lng": geo.get("longitude"),
                             "rating": place.get("rating"),

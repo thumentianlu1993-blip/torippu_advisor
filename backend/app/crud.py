@@ -1,9 +1,8 @@
-from uuid import UUID
-
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import new_secret, secret_hash
 from app.models import (
     Candidate,
     CandidateCategory,
@@ -21,6 +20,9 @@ from app.schemas import CandidateCreate, CandidateUpdate, ProjectCreate, VoteCre
 
 
 async def create_project(db: AsyncSession, data: ProjectCreate) -> Project:
+    share_token = new_secret()
+    creator_credential = new_secret()
+    recovery_key = new_secret()
     project = Project(
         destination=data.destination,
         duration_days=data.duration_days,
@@ -30,7 +32,13 @@ async def create_project(db: AsyncSession, data: ProjectCreate) -> Project:
         preferences=data.preferences,
         budget_level=data.budget_level,
         constraints=data.constraints,
+        share_token_hash=secret_hash(share_token),
+        creator_credential_hash=secret_hash(creator_credential),
+        recovery_key_hash=secret_hash(recovery_key),
     )
+    project._share_token_plain = share_token
+    project._creator_credential_plain = creator_credential
+    project._recovery_key_plain = recovery_key
     db.add(project)
     await db.flush()
     await db.refresh(project)
@@ -42,8 +50,12 @@ async def get_project(db: AsyncSession, project_id: int) -> Project | None:
     return result.scalar_one_or_none()
 
 
-async def get_project_by_token(db: AsyncSession, token: UUID) -> Project | None:
-    result = await db.execute(select(Project).where(Project.token == token))
+async def get_project_by_token(db: AsyncSession, token: str) -> Project | None:
+    result = await db.execute(
+        select(Project).where(
+            Project.share_token_hash == secret_hash(token), Project.deleted_at.is_(None)
+        )
+    )
     return result.scalar_one_or_none()
 
 
@@ -63,13 +75,24 @@ async def get_project_status(db: AsyncSession, project_id: int) -> dict:
     )
     latest_run = result.scalar_one_or_none()
 
+    coverage = "stale"
+    missing_categories: list[str] = []
+    if latest_run and latest_run.status == CollectionStatus.success:
+        coverage = "complete"
+    elif latest_run and latest_run.status in {
+        CollectionStatus.partial,
+        CollectionStatus.partial_budget_exhausted,
+    }:
+        coverage = "partial"
+        missing_categories = ["部分地点来源"]
     return {
-        "project_id": project.id,
         "status": project.status.value,
         "report_status": report.status.value if report else None,
         "report_progress": report.progress if report else 0,
         "collection_status": latest_run.status.value if latest_run else None,
         "updated_at": project.updated_at,
+        "coverage": coverage,
+        "missing_categories": missing_categories,
     }
 
 
@@ -84,7 +107,7 @@ async def list_candidates(
     area: str | None = None,
     search: str | None = None,
 ) -> list[Candidate]:
-    stmt = select(Candidate).where(Candidate.project_id == project_id)
+    stmt = select(Candidate).where(Candidate.project_id == project_id, Candidate.active.is_(True))
     if category:
         stmt = stmt.where(Candidate.category == CandidateCategory(category))
     if tier:
@@ -121,6 +144,7 @@ async def create_candidate(db: AsyncSession, project_id: int, data: CandidateCre
         source=data.source,
         source_url=data.source_url,
         summary=data.summary,
+        notes=data.notes,
         photos=data.photos or [],
         raw_data=data.raw_data or {},
         chinese_focus_summary=data.chinese_focus_summary,
@@ -178,18 +202,14 @@ async def get_vote_counts(db: AsyncSession, candidate_id: int) -> dict[str, int]
     }
 
 
-async def get_vote_by_session(
-    db: AsyncSession, candidate_id: int, session_id: str
-) -> Vote | None:
+async def get_vote_by_session(db: AsyncSession, candidate_id: int, session_id: str) -> Vote | None:
     result = await db.execute(
         select(Vote).where(Vote.candidate_id == candidate_id, Vote.session_id == session_id)
     )
     return result.scalar_one_or_none()
 
 
-async def cast_vote(
-    db: AsyncSession, candidate_id: int, session_id: str, data: VoteCreate
-) -> Vote:
+async def cast_vote(db: AsyncSession, candidate_id: int, session_id: str, data: VoteCreate) -> Vote:
     existing = await get_vote_by_session(db, candidate_id, session_id)
     if existing:
         existing.vote_type = VoteType(data.vote_type)
@@ -224,9 +244,11 @@ async def cast_vote(
 
 
 async def create_collection_run(db: AsyncSession, project_id: int) -> CollectionRun:
+    project = await get_project(db, project_id)
     run = CollectionRun(
         project_id=project_id,
         status=CollectionStatus.pending,
+        execution_fence_version=project.execution_fence_version if project else 1,
     )
     db.add(run)
     await db.flush()

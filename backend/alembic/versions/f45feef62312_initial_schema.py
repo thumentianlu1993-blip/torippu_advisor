@@ -152,4 +152,11 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_projects_token'), table_name='projects')
     op.drop_index(op.f('ix_projects_id'), table_name='projects')
     op.drop_table('projects')
+    # PostgreSQL named enum types outlive tables unless explicitly removed;
+    # leaving them behind makes disposable downgrade/upgrade verification fail.
+    op.execute('DROP TYPE IF EXISTS votetype')
+    op.execute('DROP TYPE IF EXISTS candidatetier')
+    op.execute('DROP TYPE IF EXISTS candidatecategory')
+    op.execute('DROP TYPE IF EXISTS collectionstatus')
+    op.execute('DROP TYPE IF EXISTS projectstatus')
     # ### end Alembic commands ###

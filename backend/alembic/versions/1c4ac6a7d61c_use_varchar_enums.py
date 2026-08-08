@@ -50,25 +50,31 @@ def downgrade() -> None:
     op.alter_column('votes', 'vote_type',
                existing_type=sa.Enum('like', 'dislike', 'neutral', name='votetype', native_enum=False),
                type_=postgresql.ENUM('like', 'dislike', 'neutral', name='votetype'),
+               postgresql_using='vote_type::text::votetype',
                existing_nullable=False)
     op.alter_column('reports', 'status',
                existing_type=sa.Enum('pending', 'running', 'generating', 'partial', 'success', 'failed', name='collectionstatus', native_enum=False),
                type_=postgresql.ENUM('pending', 'running', 'partial', 'success', 'failed', name='collectionstatus'),
+               postgresql_using='status::text::collectionstatus',
                existing_nullable=False)
     op.alter_column('projects', 'status',
                existing_type=sa.Enum('draft', 'collecting', 'generating', 'ready', 'error', name='projectstatus', native_enum=False),
                type_=postgresql.ENUM('draft', 'collecting', 'generating', 'ready', 'error', name='projectstatus'),
+               postgresql_using='status::text::projectstatus',
                existing_nullable=False)
     op.alter_column('collection_runs', 'status',
                existing_type=sa.Enum('pending', 'running', 'generating', 'partial', 'success', 'failed', name='collectionstatus', native_enum=False),
                type_=postgresql.ENUM('pending', 'running', 'partial', 'success', 'failed', name='collectionstatus'),
+               postgresql_using='status::text::collectionstatus',
                existing_nullable=False)
     op.alter_column('candidates', 'tier',
                existing_type=sa.Enum('must_go', 'strongly_recommended', 'optional', 'resource_pool', 'discarded', name='candidatetier', native_enum=False),
                type_=postgresql.ENUM('must_go', 'strongly_recommended', 'optional', 'resource_pool', 'discarded', name='candidatetier'),
+               postgresql_using='tier::text::candidatetier',
                existing_nullable=False)
     op.alter_column('candidates', 'category',
                existing_type=sa.Enum('core', 'natural', 'cultural', 'entertainment', 'shopping', 'local_specialty', 'personal_preference', 'niche', 'food', 'lodging', 'transport', name='candidatecategory', native_enum=False),
                type_=postgresql.ENUM('core', 'natural', 'cultural', 'entertainment', 'shopping', 'local_specialty', 'personal_preference', 'niche', 'food', 'lodging', 'transport', name='candidatecategory'),
+               postgresql_using='category::text::candidatecategory',
                existing_nullable=False)
     # ### end Alembic commands ###

@@ -26,8 +26,19 @@ def upgrade() -> None:
     op.add_column('candidates', sa.Column('pros', sa.JSON(), nullable=True))
     op.add_column('candidates', sa.Column('cons', sa.JSON(), nullable=True))
     op.add_column('candidates', sa.Column('review_snippets', sa.JSON(), nullable=True))
-    op.add_column('projects', sa.Column('creator_token', sa.UUID(), nullable=False))
+    op.add_column('projects', sa.Column('creator_token', sa.UUID(), nullable=True))
+    op.execute("UPDATE projects SET creator_token = gen_random_uuid() WHERE creator_token IS NULL")
     op.create_index(op.f('ix_projects_creator_token'), 'projects', ['creator_token'], unique=True)
+    op.alter_column('projects', 'creator_token', nullable=False)
+    # Existing installations may contain duplicates because the original ORM
+    # constraint was not represented in the migration chain. Keep the latest
+    # update (then greatest id) deterministically before adding the constraint.
+    op.execute("""
+        DELETE FROM votes loser USING votes winner
+        WHERE loser.candidate_id = winner.candidate_id
+          AND loser.session_id = winner.session_id
+          AND (loser.updated_at, loser.id) < (winner.updated_at, winner.id)
+    """)
     op.create_unique_constraint('uq_vote_candidate_session', 'votes', ['candidate_id', 'session_id'])
     # ### end Alembic commands ###
 

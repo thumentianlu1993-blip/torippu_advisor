@@ -104,9 +104,7 @@ async def test_search_tavily_parses_results():
 async def test_search_returns_empty_on_http_error():
     client = WebSearchClient(FakeSettings())
     mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.__aenter__.return_value.post = AsyncMock(
-        side_effect=httpx.HTTPError("boom")
-    )
+    mock_client.__aenter__.return_value.post = AsyncMock(side_effect=httpx.HTTPError("boom"))
     mock_client.__aexit__.return_value = False
 
     with patch("app.collectors.web_extract.httpx.AsyncClient", return_value=mock_client):
@@ -118,9 +116,7 @@ async def test_search_returns_empty_on_http_error():
 async def test_content_extractor_jina_success():
     extractor = ContentExtractor(FakeSettings())
     mock_response = AsyncMock(spec=httpx.Response)
-    mock_response.json.return_value = {
-        "data": {"title": "Title", "content": "Body text" * 10}
-    }
+    mock_response.json.return_value = {"data": {"title": "Title", "content": "Body text" * 10}}
     mock_response.raise_for_status = Mock()
     mock_client = AsyncMock(spec=httpx.AsyncClient)
     mock_client.__aenter__.return_value.get = AsyncMock(return_value=mock_response)
@@ -138,9 +134,7 @@ async def test_content_extractor_jina_success():
 async def test_content_extractor_returns_none_when_jina_fails():
     extractor = ContentExtractor(FakeSettings())
     mock_client = AsyncMock(spec=httpx.AsyncClient)
-    mock_client.__aenter__.return_value.get = AsyncMock(
-        side_effect=httpx.HTTPError("boom")
-    )
+    mock_client.__aenter__.return_value.get = AsyncMock(side_effect=httpx.HTTPError("boom"))
     mock_client.__aexit__.return_value = False
 
     with patch("app.collectors.web_extract.httpx.AsyncClient", return_value=mock_client):

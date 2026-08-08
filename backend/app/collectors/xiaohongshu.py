@@ -32,9 +32,7 @@ class XiaohongshuCollector(BaseCollector):
         # TIKHUB_API_KEY is the canonical setting; XIAOHONGSHU_API_KEY is
         # kept as a fallback for existing deployments.
         self.api_key = settings.TIKHUB_API_KEY or settings.XIAOHONGSHU_API_KEY
-        self.base_url = (
-            settings.XIAOHONGSHU_API_BASE_URL or "https://api.tikhub.io"
-        ).rstrip("/")
+        self.base_url = (settings.XIAOHONGSHU_API_BASE_URL or "https://api.tikhub.io").rstrip("/")
         self.endpoint = settings.XIAOHONGSHU_API_ENDPOINT or _DEFAULT_ENDPOINT
 
     async def is_available(self) -> bool:
@@ -75,9 +73,7 @@ class XiaohongshuCollector(BaseCollector):
             tips = await self._search(f"{destination} {name} 攻略", limit=_MAX_TIPS)
             enriched = {
                 **candidate,
-                "xiaohongshu_tips": _merge_tips(
-                    candidate.get("xiaohongshu_tips", []), tips
-                ),
+                "xiaohongshu_tips": _merge_tips(candidate.get("xiaohongshu_tips", []), tips),
                 "source": self.name,
             }
             return CollectorResult(source=self.name, success=True, data=enriched)
@@ -140,9 +136,7 @@ class XiaohongshuCollector(BaseCollector):
         return tips
 
 
-def _merge_tips(
-    existing: list[dict[str, Any]], new: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
+def _merge_tips(existing: list[dict[str, Any]], new: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     merged: list[dict[str, Any]] = []
     for tip in existing + new:

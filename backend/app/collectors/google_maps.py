@@ -12,10 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _is_quota_error(exc: Exception) -> bool:
-    return (
-        isinstance(exc, httpx.HTTPStatusError)
-        and exc.response.status_code == 429
-    )
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
 
 
 def _broad_queries(destination: str) -> list[str]:

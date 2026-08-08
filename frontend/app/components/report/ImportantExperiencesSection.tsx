@@ -3,16 +3,14 @@ import { Gem } from "lucide-react";
 
 export default function ImportantExperiencesSection({
   candidates,
-  projectId,
+  token,
   isCreator,
-  creatorToken,
   votesRevealed,
   onChange,
 }: {
   candidates: any[];
-  projectId: number;
+  token: string;
   isCreator: boolean;
-  creatorToken: string | null;
   votesRevealed: boolean;
   onChange: () => void;
 }) {
@@ -26,9 +24,8 @@ export default function ImportantExperiencesSection({
       </div>
       <CandidateList
         candidates={candidates}
-        projectId={projectId}
+        token={token}
         isCreator={isCreator}
-        creatorToken={creatorToken}
         votesRevealed={votesRevealed}
         onChange={onChange}
       />

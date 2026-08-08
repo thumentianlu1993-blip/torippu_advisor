@@ -59,7 +59,7 @@ def test_collector_result_to_dict():
     assert len(d["data"]) == 1
 
 
-def test_merge_candidates_deduplicates_by_external_id():
+def test_external_id_is_namespaced_by_provider_before_canonical_linking():
     collected = [
         CollectorResult(
             source="google_maps",
@@ -94,15 +94,11 @@ def test_merge_candidates_deduplicates_by_external_id():
         ),
     ]
     merged = _merge_candidates(collected)
-    assert len(merged) == 1
-    # google_maps has higher source priority, so its review_count wins.
-    assert merged[0]["review_count"] == 10
-    assert merged[0]["photos"] == ["http://example.com/photo.jpg"]
-    assert "google_maps" in merged[0]["source"]
-    assert "foursquare" in merged[0]["source"]
+    assert len(merged) == 2
+    assert {item["source"] for item in merged} == {"google_maps", "foursquare"}
 
 
-def test_merge_candidates_fuzzy_geo_match():
+def test_cross_provider_geo_match_is_deferred_to_audited_identity_service():
     collected = [
         CollectorResult(
             source="google_maps",
@@ -134,12 +130,10 @@ def test_merge_candidates_fuzzy_geo_match():
         ),
     ]
     merged = _merge_candidates(collected)
-    assert len(merged) == 1
-    assert merged[0]["rating"] == 4.0
-    assert merged[0]["review_count"] == 50
+    assert len(merged) == 2
 
 
-def test_merge_candidates_name_normalization():
+def test_name_only_cross_provider_records_are_not_merged():
     collected = [
         CollectorResult(
             source="google_maps",
@@ -153,8 +147,7 @@ def test_merge_candidates_name_normalization():
         ),
     ]
     merged = _merge_candidates(collected)
-    assert len(merged) == 1
-    assert merged[0]["review_count"] == 5
+    assert len(merged) == 2
 
 
 def test_merge_candidates_concatenates_chinese_tips():
@@ -203,9 +196,9 @@ def test_merge_candidates_concatenates_chinese_tips():
         ),
     ]
     merged = _merge_candidates(collected)
-    assert len(merged) == 1
-    assert len(merged[0]["chinese_tips"]) == 1
-    assert len(merged[0]["xiaohongshu_tips"]) == 1
+    assert len(merged) == 2
+    assert all(len(item["chinese_tips"]) == 1 for item in merged)
+    assert sum(bool(item.get("xiaohongshu_tips")) for item in merged) == 1
 
 
 def test_schemas_candidate_preserves_rich_fields():

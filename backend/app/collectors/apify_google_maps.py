@@ -91,8 +91,7 @@ class ApifyGoogleMapsCollector(BaseCollector):
                 "category": item.get("categoryName") or candidate.get("category"),
                 "photos": (item.get("imageUrls", [])[:5] or candidate.get("photos", [])),
                 "reviews": (
-                    self._extract_reviews(item.get("reviews", []))
-                    or candidate.get("reviews", [])
+                    self._extract_reviews(item.get("reviews", [])) or candidate.get("reviews", [])
                 ),
                 "source_url": item.get("url") or candidate.get("source_url"),
                 "source": self.name,

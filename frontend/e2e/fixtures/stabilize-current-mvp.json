@@ -1,0 +1,11 @@
+{
+  "providerMode": "mock-only",
+  "steps": [
+    "create-project",
+    "save-recovery-key",
+    "share-read",
+    "cookie-vote",
+    "creator-manual-candidate",
+    "reveal-and-hide-votes"
+  ]
+}

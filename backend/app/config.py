@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     # Comma-separated list of origins allowed to call the API cross-origin.
     CORS_ORIGINS: str = "http://localhost:3000"
+    TRUSTED_PROXY_CIDRS: str = ""
+    RATE_LIMIT_REDIS_URL: str = ""
+    DENY_EXTERNAL_NETWORK: bool = False
 
 
 settings = Settings()

@@ -56,10 +56,14 @@ A web application that automates travel research and produces an "oversaturated 
   ```bash
   docker compose exec frontend npx tsc --noEmit
   ```
-- Sharing model: report pages are public via `/p/{token}`; the creator's URL
-  carries an additional `?creator_token=…` credential that unlocks editing
-  (candidate tier changes, additions, deletions, re-collection) via the
-  `X-Creator-Token` header. Voting requires no registration.
+- Sharing model: report pages require the current `/p/{share-token}` link.
+  Creator authority is a 180-day, project-path-scoped HttpOnly/Secure cookie;
+  the one-time recovery key must be saved offline. Anonymous voting uses a
+  separate project-scoped HttpOnly cookie. No credential is placed in URLs or
+  JavaScript storage.
+- Browser writes require an exact configured `Origin`. Configure
+  `TRUSTED_PROXY_CIDRS` before trusting forwarded client addresses and keep
+  `RATE_LIMIT_REDIS_URL` available; abuse-sensitive writes fail closed.
 - External API keys are optional and degrade gracefully per collector; see
   `docs/API_KEYS.md` for where to get each key and current pricing.
 - Production deployment (Nginx + subdomain coexistence): see `DEPLOYMENT.md`.

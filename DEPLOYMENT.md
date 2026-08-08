@@ -31,15 +31,17 @@ Add an A record for `travel.umafans.run` pointing to the server IP. Wait for pro
    - `DATABASE_URL` pointing to the `postgres` service
    - `NEXT_PUBLIC_API_URL=https://travel.umafans.run`
    - `CORS_ORIGINS=https://travel.umafans.run`
+   - `TRUSTED_PROXY_CIDRS` set only to the actual reverse-proxy networks
+   - `RATE_LIMIT_REDIS_URL=redis://redis:6379/1`
 
 3. Build and start the production stack:
    ```bash
    docker compose -f docker-compose.prod.yml up --build -d
    ```
 
-4. Database migrations run automatically when the backend container starts
-   (`alembic upgrade head` executes before uvicorn launches). To verify or
-   re-apply manually:
+4. Do not start the production stack until the reviewed migration preflight,
+   backup restore point, bridge artifact and explicit release authorization are
+   recorded. The container runs `alembic upgrade head`; inspect first:
    ```bash
    docker compose -f docker-compose.prod.yml exec backend alembic current
    docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
@@ -70,6 +72,10 @@ Add an A record for `travel.umafans.run` pointing to the server IP. Wait for pro
    ```
 
 ## Rollback
+
+After the expand migration, only the reviewed bridge artifact is schema
+compatible. It permits reads and fails closed for creator, collection, voting
+and candidate writes. The pre-expand image is not a valid rollback target.
 
 If something goes wrong:
 ```bash
