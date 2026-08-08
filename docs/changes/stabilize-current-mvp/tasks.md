@@ -42,12 +42,12 @@
 - [x] T3.2 核对 spec/design/tests/tasks/rollout 与代码一致，生成受审 diff 指纹。依赖：T3.1。证据：首次 code review 已覆盖完整工作树。
 - [x] T3.3 建立未参与实现的需求专属代码 reviewer，执行 Codex 原生 `/review` 或等价只读 review。依赖：T3.2。证据：`/root/stabilize_mvp_code_review` 首审 BLOCKED，无 P0、10 P1、2 P2。
 - [x] T3.4 由实现 subagent 修复 finding，回原 reviewer 复审；受审内容任何变化均使旧结论失效。依赖：T3.3。证据：原 reviewer `/root/stabilize_mvp_code_review` 最终 `REVIEW APPROVE`；10 P1、2 P2 与发布前预检发现的 P1-10 `bridge artifact hash drifted` 直接回归均已关闭。P1-10 manifest 由 `2ebb5e1ddb1cd75829597afcebe762379fa9bd292b6b0423cd340808d428e327` 更新为 `fdc9c41945ba38df0ab43701b4a1c4cc864649ee16cdc9bb0b448f321e01938b`，bridge compatibility 与 pre/expand frontend matrix 通过。
-- [x] T3.5 记录最新代码审核成功、范围与受审版本。依赖：T3.4。原 reviewer 批准覆盖完整工作树指纹 `1fef63174df9577a0786086211d51aa7ef82744f3be2e4f6b70b3b63a7c7e013`；发布暂存门禁随后在已 staged 旧快照中发现 3 处 Markdown whitespace，工作树仅以 `apply_patch` 修复 `.agents/skills/grill-me-codex/SKILL.md` 的 EOF 空行及 `spec.md` 两处行尾空格，未执行 `git add`，因此 cached 旧快照预期仍报告原问题。当前完整工作树 SHA-256：`8dcd1a2a1e16de591acebe846e061c8e415ac71ac8d133c94faec9c1bdce1a58`。算法仍为 `travel-worktree-v1`，对 HEAD/index tracked 与未忽略 untracked 路径取并集并按字节序排序，文件纳入完整内容、tracked 缺失路径纳入 `DELETED`，计算前仅把 tasks/rollout 中本指纹字段规范化为字面量 `<WORKTREE_SHA256>`。
+- [x] T3.5 记录最新代码审核成功、范围与受审版本。依赖：T3.4。原 reviewer 批准覆盖完整工作树指纹 `1fef63174df9577a0786086211d51aa7ef82744f3be2e4f6b70b3b63a7c7e013`；后续证据修正、Markdown whitespace 修复及本次 frontend CI Chromium 安装修复均改变受审内容。远端 run `31243236261` 的 frontend job `93067494916` 已确认只因 Chromium 可执行文件缺失而失败，当前 workflow 修复待原 reviewer 复审及远端复跑，不得声称通过。当前完整工作树 SHA-256：`98196cea6f24ca10be9832ffa68203e29e78b88519da97e7fd5eaefdde0bb5e3`。算法仍为 `travel-worktree-v1`，对 HEAD/index tracked 与未忽略 untracked 路径取并集并按字节序排序，文件纳入完整内容、tracked 缺失路径纳入 `DELETED`，计算前仅把 tasks/rollout 中本指纹字段规范化为字面量 `<WORKTREE_SHA256>`。
 
 ## 4. 发布关口（不属于当前授权）
 
 - [x] R4.1 只读重查远端分支、生产主机、数据库 revision/数据、备份、DNS/TLS、配置与权限。依赖：T3.5。证据：2026-08-08 只读预检已完成并记录于 `rollout.md`；Git/DNS/本地配置与 bridge 可验证，生产 host、数据库、备份、Redis/Celery 均 unknown，存在发布阻塞，未执行任何写入。
-- [!] R4.2 向用户报告受审内容、风险和精确发布/回滚步骤。依赖：R4.1。用户已于 2026-08-08 本轮针对指纹 `1fef63174df9577a0786086211d51aa7ef82744f3be2e4f6b70b3b63a7c7e013` 明确说“发布吧”；后续文档证据与 3 处纯 whitespace 修复均改变完整工作树指纹，按规则须先由原 reviewer 确认新指纹并由用户重新授权，同时仍待提供或确认生产 host 与 DNS 管理目标。不得据旧授权执行 R4.3。
+- [!] R4.2 向用户报告受审内容、风险和精确发布/回滚步骤。依赖：R4.1。用户已于 2026-08-08 本轮针对指纹 `1fef63174df9577a0786086211d51aa7ef82744f3be2e4f6b70b3b63a7c7e013` 明确说“发布吧”；后续文档证据、3 处纯 whitespace 修复及本次 frontend CI workflow 修复均改变完整工作树指纹，按规则须先由原 reviewer 确认新指纹、取得远端 CI 复跑证据并由用户重新授权，同时仍待提供或确认生产 host 与 DNS 管理目标。不得据旧授权执行 R4.3。
 - [ ] R4.3 获授权后才可 commit、push、PR/merge、迁移、部署、DNS 或生产写入；任何内容漂移须重审并重新授权。依赖：R4.2。
 - [ ] R4.4 执行生产 smoke 并记录 AC-11 证据；失败按 `rollout.md` 停止/回滚。依赖：R4.3。
 
